@@ -1,6 +1,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text } from 'react-native';
 
+import { Colors } from '../constants/theme';
 import type { Habit } from '../context/AppContext';
 
 type Props = {
@@ -21,18 +22,18 @@ const styles = StyleSheet.create({
   row: {
     padding: 12,
     borderRadius: 12,
-    backgroundColor: '#ffffff',
+    backgroundColor: Colors.surfaceLight,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: Colors.borderLight,
     gap: 6,
   },
   title: {
     fontSize: 16,
-    color: '#0f172a',
+    color: Colors.textPrimary,
     fontWeight: '600',
   },
   streak: {
     fontSize: 14,
-    color: '#475569',
+    color: Colors.textSecondary,
   },
 });

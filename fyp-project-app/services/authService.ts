@@ -21,11 +21,12 @@ type UpdateProfileInput = Partial<ProfilePayload> & {
   avatar_image_uri?: string;
 };
 
-export async function signup(email: string, password: string): Promise<AuthPayload> {
-  const response = await api.post('/auth/signup/', {
-    email,
-    password,
-  });
+export async function signup(email: string, password: string, full_name?: string): Promise<AuthPayload> {
+  const body: any = { email, password };
+  if (typeof full_name === 'string' && full_name.trim()) {
+    body.full_name = full_name.trim();
+  }
+  const response = await api.post('/auth/signup/', body);
   return parseJsonData<AuthPayload>(response.data);
 }
 
@@ -87,4 +88,18 @@ export async function updateProfile(input: UpdateProfileInput): Promise<ProfileP
 
   const response = await api.patch('/auth/profile/', formData);
   return parseJsonData<ProfilePayload>(response.data);
+}
+
+export async function requestPasswordReset(email: string): Promise<{ detail?: string }> {
+  const response = await api.post('/auth/password/forgot/', { email });
+  return parseJsonData<{ detail?: string }>(response.data);
+}
+
+export async function resetPassword(email: string, code: string, newPassword: string): Promise<{ detail?: string }> {
+  const response = await api.post('/auth/password/reset/', {
+    email,
+    code,
+    new_password: newPassword,
+  });
+  return parseJsonData<{ detail?: string }>(response.data);
 }

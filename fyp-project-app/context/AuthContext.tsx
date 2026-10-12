@@ -25,7 +25,7 @@ type AuthContextValue = {
   isAuthenticated: boolean;
   user: AuthUser | null;
   login: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
-  signup: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  signup: (email: string, password: string, fullName?: string) => Promise<{ ok: boolean; error?: string }>;
   updateProfile: (input: {
     fullName?: string;
     avatarUrl?: string;
@@ -119,6 +119,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const restoreSession = async () => {
       try {
+        // Clear tokens on every app start for demo purposes
+        await safeRemoveItem(STORAGE_KEY);
+        setApiAuthToken(null);
+        setApiRequestUserId(null);
+        setUser(null);
+        return;
+
         const raw = await safeGetItem(STORAGE_KEY);
         if (!raw) {
           return;
@@ -189,6 +196,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setApiAuthToken(nextUser.token);
       setApiRequestUserId(nextUser.userId);
       setUser(nextUser);
+      console.log('Login successful, user set:', nextUser);
+      console.log('isAuthenticated should be:', Boolean(nextUser));
       await safeSetItem(STORAGE_KEY, JSON.stringify(nextUser));
       return { ok: true };
     } catch (error) {
@@ -199,7 +208,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const signup = async (email: string, password: string) => {
+  const signup = async (email: string, password: string, fullName?: string) => {
     const cleanEmail = email.trim().toLowerCase();
 
     if (!cleanEmail || !cleanEmail.includes('@')) {
@@ -211,7 +220,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const payload = await signupRequest(cleanEmail, password);
+      const payload = await signupRequest(cleanEmail, password, fullName);
       const nextUser = {
         email: payload.email,
         token: payload.token,

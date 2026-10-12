@@ -1,6 +1,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { Colors } from '../constants/theme';
 import type { Task } from '../context/AppContext';
 
 type Props = {
@@ -11,7 +12,7 @@ type Props = {
 
 export function TaskRow({ task, onPress, onDelete }: Props) {
   const priorityColor =
-    task.priority === 'High' ? '#dc2626' : task.priority === 'Medium' ? '#d97706' : '#16a34a';
+    task.priority === 'high' ? Colors.error : task.priority === 'medium' ? Colors.warning : Colors.success;
 
   return (
     <Pressable style={[styles.row, task.done && styles.rowDone]} onPress={onPress}>
@@ -33,14 +34,14 @@ const styles = StyleSheet.create({
   row: {
     padding: 12,
     borderRadius: 12,
-    backgroundColor: '#ffffff',
+    backgroundColor: Colors.surfaceLight,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: Colors.borderLight,
     gap: 6,
   },
   rowDone: {
-    backgroundColor: '#ecfeff',
-    borderColor: '#a5f3fc',
+    backgroundColor: Colors.primaryLight,
+    borderColor: Colors.primaryLight,
   },
   headerRow: {
     flexDirection: 'row',
@@ -50,13 +51,13 @@ const styles = StyleSheet.create({
   },
   text: {
     fontSize: 16,
-    color: '#0f172a',
+    color: Colors.textPrimary,
     fontWeight: '600',
     flex: 1,
   },
   textDone: {
     textDecorationLine: 'line-through',
-    color: '#64748b',
+    color: Colors.textHint,
   },
   priority: {
     fontSize: 12,
@@ -64,7 +65,7 @@ const styles = StyleSheet.create({
   },
   deadline: {
     fontSize: 13,
-    color: '#475569',
+    color: Colors.textSecondary,
   },
   deleteButton: {
     alignSelf: 'flex-start',
@@ -72,10 +73,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
-    backgroundColor: '#fee2e2',
+    backgroundColor: Colors.primaryLight,
   },
   deleteText: {
-    color: '#b91c1c',
+    color: Colors.error,
     fontSize: 12,
     fontWeight: '700',
   },

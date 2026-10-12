@@ -1,4 +1,4 @@
-export type TaskPriority = 'Low' | 'Medium' | 'High';
+export type TaskPriority = 'low' | 'medium' | 'high';
 
 export type TaskDto = {
   id: string;

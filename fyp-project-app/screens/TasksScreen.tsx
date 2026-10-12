@@ -1,285 +1,263 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  FlatList,
+  Modal,
   Pressable,
-  RefreshControl,
   StyleSheet,
   Text,
-  TextInput,
   View,
+  Alert,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import type { NavigationProp } from '@react-navigation/native';
-
-import { TaskRow } from '../components/TaskRow';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAppContext } from '../context/AppContext';
+import { Colors } from '../constants/theme';
 import type { RootStackParamList } from '../navigation/types';
 
-type SpeechResultEvent = {
-  results?: Array<{ transcript?: string }>;
+type TasksScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
+
+type Task = {
+  id: string;
+  title: string;
+  description: string;
+  category?: string;
+  priority: 'high' | 'medium' | 'low';
+  status: 'pending' | 'in_progress' | 'done';
+  deadline?: string | null | undefined;
+  done?: boolean;
+  reminder_time?: string | null;
+  time_slot_start?: string | null;
+  time_slot_end?: string | null;
+  links?: string[];
+  time_spent_seconds?: number;
+  progress_percentage?: number;
+  email_reminder_enabled?: boolean;
+  attachments?: any[];
+  created_at?: string;
+  updated_at?: string;
 };
-
-type SpeechErrorEvent = {
-  message?: string;
-};
-
-type SpeechModule = {
-  start: (options: {
-    lang: string;
-    interimResults: boolean;
-    continuous: boolean;
-    maxAlternatives: number;
-  }) => void;
-  stop: () => void;
-  requestPermissionsAsync: () => Promise<{ granted: boolean }>;
-  addListener: (eventName: string, listener: (event: any) => void) => { remove: () => void };
-};
-
-let speechModule: SpeechModule | null = null;
-
-try {
-  const speechPackage = require('expo-speech-recognition');
-  speechModule = speechPackage.ExpoSpeechRecognitionModule as SpeechModule;
-} catch {
-  speechModule = null;
-}
 
 export function TasksScreen() {
-  const { tasks, tasksLoading, tasksError, fetchTasks, deleteTask, toggleTask, addTask } =
-    useAppContext();
-  const navigation = useNavigation<NavigationProp<RootStackParamList>>();
-  const [showVoiceInput, setShowVoiceInput] = useState(false);
-  const [voiceText, setVoiceText] = useState('');
-  const [voiceError, setVoiceError] = useState<string | null>(null);
-  const [voiceSuccess, setVoiceSuccess] = useState<string | null>(null);
-  const [isListening, setIsListening] = useState(false);
+  const { tasks, tasksLoading, tasksError, fetchTasks, deleteTask, updateTask, addTask } = useAppContext();
+  const navigation = useNavigation<TasksScreenNavigationProp>();
+  
+  // Selected task state
+  const [selectedTask, setSelectedTask] = useState<any>(null);
 
   useEffect(() => {
     fetchTasks();
   }, [fetchTasks]);
 
-  const voiceHint = useMemo(
-    () => 'Example: Add task Buy milk tomorrow',
-    []
-  );
+  // Calculate today's open tasks stats
+  const today = getTodayDateString();
+  const openTasks = tasks.filter(task => {
+    const taskDate = task.deadline ? new Date(task.deadline).toISOString().split('T')[0] : null;
+    return taskDate === today && task.status !== 'done';
+  }).length;
+  const totalTasks = tasks.filter(task => {
+    const taskDate = task.deadline ? new Date(task.deadline).toISOString().split('T')[0] : null;
+    return taskDate === today;
+  }).length;
 
-  useEffect(() => {
-    if (!speechModule) {
-      return;
-    }
+  // Get only the 3 most recent tasks for preview
+  const recentTasks = tasks.slice(0, 3);
 
-    const startSub = speechModule.addListener('start', () => {
-      setIsListening(true);
-    });
-
-    const endSub = speechModule.addListener('end', () => {
-      setIsListening(false);
-    });
-
-    const errorSub = speechModule.addListener('error', (event: SpeechErrorEvent) => {
-      setIsListening(false);
-      setVoiceError(event.message || 'Speech recognition failed.');
-    });
-
-    const resultSub = speechModule.addListener('result', (event: SpeechResultEvent) => {
-      const transcript = event.results?.[0]?.transcript?.trim();
-      if (transcript) {
-        setVoiceText(transcript);
-        setVoiceError(null);
-      }
-    });
-
-    return () => {
-      startSub.remove();
-      endSub.remove();
-      errorSub.remove();
-      resultSub.remove();
-    };
-  }, []);
-
-  const parseVoiceCommand = (input: string) => {
-    const normalized = input.trim();
-    const match = normalized.match(/^add\s+task\s+(.+?)(?:\s+(today|tomorrow|\d{4}-\d{2}-\d{2}))?$/i);
-
-    if (!match) {
-      return null;
-    }
-
-    const title = match[1].trim();
-    const rawDate = match[2]?.toLowerCase();
-    if (!title) {
-      return null;
-    }
-
-    const today = new Date();
-    const date = new Date(today);
-
-    if (rawDate === 'tomorrow') {
-      date.setDate(today.getDate() + 1);
-    } else if (rawDate === 'today' || !rawDate) {
-      // Keep today's date as default.
-    } else {
-      const parsed = new Date(`${rawDate}T00:00:00`);
-      if (Number.isNaN(parsed.getTime())) {
-        return null;
-      }
-      return { title, deadline: rawDate };
-    }
-
-    const deadline = date.toISOString().split('T')[0];
-    return { title, deadline };
+  const handleAddTask = () => {
+    navigation.navigate('AddTask');
   };
 
-  const handleRunVoiceCommand = async () => {
-    setVoiceError(null);
-    setVoiceSuccess(null);
-
-    const parsed = parseVoiceCommand(voiceText);
-    if (!parsed) {
-      setVoiceError('Invalid command format. Use: Add task <title> <today|tomorrow|YYYY-MM-DD>');
-      return;
-    }
-
-    const created = await addTask({
-      title: parsed.title,
-      description: 'Created from voice command',
-      priority: 'Medium',
-      deadline: parsed.deadline,
-    });
-
-    if (!created) {
-      setVoiceError('Task could not be created.');
-      return;
-    }
-
-    setVoiceSuccess(`Added: ${parsed.title} (${parsed.deadline})`);
-    setVoiceText('');
+  const handleViewAllTasks = () => {
+    navigation.navigate('AllTasks');
   };
 
-  const handleMicrophonePress = async () => {
-    setVoiceError(null);
-    setVoiceSuccess(null);
-
-    if (!speechModule) {
-      setVoiceError('Voice recognition requires a development build (not Expo Go).');
-      return;
-    }
-
-    if (isListening) {
-      speechModule.stop();
-      return;
-    }
-
-    const permission = await speechModule.requestPermissionsAsync();
-    if (!permission.granted) {
-      setVoiceError('Microphone and speech permissions are required.');
-      return;
-    }
-
-    speechModule.start({
-      lang: 'en-US',
-      interimResults: true,
-      continuous: false,
-      maxAlternatives: 1,
-    });
+  const handleViewAnalytics = () => {
+    navigation.navigate('TaskAnalytics');
   };
 
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case 'high': return Colors.error;
+      case 'medium': return Colors.warning;
+      case 'low': return Colors.success;
+      default: return Colors.textSecondary;
+    }
+  };
+
+  const getPriorityBadge = (priority: string) => {
+    switch (priority) {
+      case 'high': return '🔴 HIGH';
+      case 'medium': return '🟡 MEDIUM';
+      case 'low': return '🟢 LOW';
+      default: return '⚪ LOW';
+    }
+  };
+
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
+  
+  const handleDeleteTask = (task: Task) => {
+    Alert.alert(
+      'Delete Task',
+      `Are you sure you want to delete "${task.title}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive',
+          onPress: async () => {
+            const ok = await deleteTask(task.id);
+            if (ok !== undefined && ok) {
+              await fetchTasks(true);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Tasks</Text>
-        <Text style={styles.subtitle}>Tap a task to mark complete</Text>
+        <Text style={styles.title}>Task Manager</Text>
+        <Text style={styles.subtitle}>Manage and track your daily tasks with priority and reminders.</Text>
       </View>
 
-      <FlatList
-        data={tasks}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        refreshControl={<RefreshControl refreshing={tasksLoading} onRefresh={fetchTasks} />}
-        ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-        ListHeaderComponent={
+      <View style={styles.summaryCard}>
+        <Text style={styles.summaryTitle}>Today's Tasks</Text>
+        {totalTasks === 0 ? (
+          <Text style={styles.summaryText}>No tasks scheduled for today</Text>
+        ) : (
           <>
-            <View style={styles.voiceHeaderRow}>
-              <Text style={styles.voiceTitle}>Voice Command</Text>
-              <Pressable
-                onPress={() => {
-                  setShowVoiceInput((prev) => !prev);
-                  setVoiceError(null);
-                  setVoiceSuccess(null);
-                }}
-                style={styles.micButton}>
-                <Text style={styles.micButtonText}>Microphone</Text>
-              </Pressable>
+            <Text style={styles.summaryText}>
+              {openTasks} of {totalTasks} tasks remaining
+            </Text>
+            <View style={styles.progressBar}>
+              <View 
+                style={[
+                  styles.progressFill, 
+                  { width: `${((totalTasks - openTasks) / totalTasks) * 100}%` }
+                ]} 
+              />
             </View>
-
-            {showVoiceInput ? (
-              <View style={styles.voiceCard}>
-                <Text style={styles.voiceHint}>{voiceHint}</Text>
-                <TextInput
-                  value={voiceText}
-                  onChangeText={setVoiceText}
-                  placeholder="Add task Buy milk tomorrow"
-                  style={styles.voiceInput}
-                />
-                {!speechModule ? (
-                  <Text style={styles.voiceHintWarning}>
-                    Native voice input is unavailable in Expo Go. Use a development build for microphone recognition.
-                  </Text>
-                ) : null}
-                <Pressable
-                  style={[styles.voiceActionButton, isListening && styles.voiceActionButtonStop]}
-                  onPress={handleMicrophonePress}>
-                  <Text style={styles.voiceActionText}>
-                    {isListening ? 'Stop Listening' : 'Start Listening'}
-                  </Text>
-                </Pressable>
-                <Pressable style={styles.voiceActionButton} onPress={handleRunVoiceCommand}>
-                  <Text style={styles.voiceActionText}>Run Command</Text>
-                </Pressable>
-                {voiceError ? <Text style={styles.voiceError}>{voiceError}</Text> : null}
-                {voiceSuccess ? <Text style={styles.voiceSuccess}>{voiceSuccess}</Text> : null}
-              </View>
-            ) : null}
-
-            {tasksError ? (
-              <View style={styles.errorBox}>
-                <Text style={styles.errorText}>{tasksError}</Text>
-                <Pressable onPress={() => fetchTasks(true)} style={styles.retryButton}>
-                  <Text style={styles.retryText}>Retry</Text>
-                </Pressable>
-              </View>
-            ) : null}
           </>
-        }
-        ListEmptyComponent={<Text style={styles.empty}>No tasks yet. Add your first task.</Text>}
-        renderItem={({ item }) => (
-          <TaskRow
-            task={item}
-            onPress={() => toggleTask(item.id)}
-            onDelete={() => deleteTask(item.id)}
-          />
         )}
-      />
+      </View>
+
+      {/* Add Task Button */}
+      <Pressable style={styles.addTaskButton} onPress={handleAddTask}>
+        <Text style={styles.addTaskButtonText}>+ Add Task</Text>
+      </Pressable>
+
+      {/* Recent Tasks Preview */}
+      {recentTasks.length > 0 && (
+        <View style={styles.previewSection}>
+          <Text style={styles.previewTitle}>Recent Tasks</Text>
+          {recentTasks.map((task) => (
+            <Pressable key={task.id} onPress={() => setSelectedTask(task)}>
+              <View style={styles.previewCard}>
+                <Text style={styles.previewTaskName}>{task.title}</Text>
+                <View style={styles.previewMeta}>
+                  <View style={[styles.priorityBadge, { backgroundColor: getPriorityColor(task.priority) }]}>
+                    <Text style={styles.priorityText}>{getPriorityBadge(task.priority)}</Text>
+                  </View>
+                  <Text style={styles.previewMetaText}>
+                    {task.deadline ? formatDate(task.deadline) : 'No date'}
+                  </Text>
+                </View>
+              </View>
+            </Pressable>
+          ))}
+          
+          {/* View All Tasks Button */}
+          <Pressable style={styles.viewAllButton} onPress={handleViewAllTasks}>
+            <Text style={styles.viewAllButtonText}>View All Tasks</Text>
+          </Pressable>
+
+          {/* View Analytics Button */}
+          <Pressable style={styles.viewAllButton} onPress={handleViewAnalytics}>
+            <Text style={styles.viewAllButtonText}>View Analytics 📊</Text>
+          </Pressable>
+        </View>
+      )}
 
       {tasksLoading && tasks.length > 0 ? (
         <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="small" color="#1d4ed8" />
+          <ActivityIndicator size="small" color={Colors.primary} />
         </View>
       ) : null}
+      
+      {/* Selected Task Modal */}
+      <Modal
+        visible={selectedTask !== null}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setSelectedTask(null)}>
+        <View style={styles.selectedTaskOverlay}>
+          <View style={styles.selectedTaskModalContent}>
+            <Text style={styles.selectedTaskTitle}>{selectedTask?.title}</Text>
+            <Text style={styles.selectedTaskMeta}>Priority: {getPriorityBadge(selectedTask?.priority || 'low')}</Text>
+            <Text style={styles.selectedTaskMeta}>Status: {selectedTask?.status?.replace('_', ' ') || 'pending'}</Text>
+            <Text style={styles.selectedTaskMeta}>
+              Due: {selectedTask?.deadline ? formatDate(selectedTask.deadline) : 'No deadline'}
+            </Text>
+            {selectedTask?.description && (
+              <Text style={styles.selectedTaskMeta}>Description: {selectedTask.description}</Text>
+            )}
+            {selectedTask?.email_reminder_enabled && (
+              <Text style={styles.selectedTaskMeta}>🔔 Email reminder enabled</Text>
+            )}
+            <Pressable style={styles.selectedTaskDeleteButton} onPress={() => {
+                handleDeleteTask(selectedTask);
+                setSelectedTask(null);
+              }}>
+                <Text style={styles.selectedTaskDeleteButtonText}>Delete</Text>
+              </Pressable>
+            <Pressable style={styles.selectedTaskCloseButton} onPress={() => setSelectedTask(null)}>
+              <Text style={styles.selectedTaskCloseButtonText}>Close</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
-      <Pressable style={styles.fab} onPress={() => navigation.navigate('AddTask')}>
-        <Text style={styles.fabText}>+</Text>
-      </Pressable>
+      
+      {tasksError && (
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{tasksError}</Text>
+          <Pressable onPress={() => fetchTasks(true)} style={styles.retryButton}>
+            <Text style={styles.retryText}>Retry</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {tasksLoading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+      )}
     </SafeAreaView>
   );
+}
+
+function getTodayDateString() {
+  return formatDate(new Date());
+}
+
+function formatDate(date: Date) {
+  return date.toISOString().split('T')[0];
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#eef2f7',
+    backgroundColor: Colors.bgLight,
+    paddingTop: 40,
   },
   header: {
     paddingHorizontal: 16,
@@ -290,152 +268,215 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: '700',
-    color: '#0f172a',
+    color: Colors.primary,
   },
   subtitle: {
     fontSize: 14,
-    color: '#475569',
+    color: Colors.textSecondary,
+    paddingHorizontal: 16,
   },
-  listContent: {
-    padding: 16,
-    paddingBottom: 96,
+  summaryCard: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 8,
+    backgroundColor: Colors.surfaceLight,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    padding: 12,
+    gap: 8,
   },
-  empty: {
-    textAlign: 'center',
-    marginTop: 18,
-    color: '#64748b',
+  summaryTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.textPrimary,
   },
-  voiceHeaderRow: {
+  summaryText: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+  },
+  progressBar: {
+    height: 8,
+    backgroundColor: Colors.borderLight,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: Colors.primary,
+    borderRadius: 4,
+  },
+  addTaskButton: {
+    backgroundColor: Colors.primary,
+    borderRadius: 8,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  addTaskButtonText: {
+    color: Colors.white,
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  previewSection: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
+  previewTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    marginBottom: 12,
+  },
+  previewCard: {
+    backgroundColor: Colors.surfaceLight,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    padding: 12,
+    marginBottom: 10,
+    gap: 6,
+    shadowColor: Colors.textPrimary,
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
+  },
+  previewTaskName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  previewMeta: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
   },
-  voiceTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#1e293b',
+  previewMetaText: {
+    fontSize: 13,
+    color: Colors.textSecondary,
   },
-  micButton: {
-    backgroundColor: '#e0e7ff',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  micButtonText: {
-    color: '#3730a3',
-    fontWeight: '700',
-    fontSize: 12,
-  },
-  voiceCard: {
-    borderWidth: 1,
-    borderColor: '#c7d2fe',
-    borderRadius: 14,
-    padding: 12,
-    backgroundColor: '#eef2ff',
-    marginBottom: 12,
-    gap: 8,
-  },
-  voiceHint: {
-    fontSize: 12,
-    color: '#475569',
-  },
-  voiceHintWarning: {
-    fontSize: 12,
-    color: '#92400e',
-    backgroundColor: '#fef3c7',
-    borderRadius: 8,
+  priorityBadge: {
     paddingHorizontal: 8,
-    paddingVertical: 6,
-  },
-  voiceInput: {
-    borderWidth: 1,
-    borderColor: '#bfdbfe',
+    paddingVertical: 4,
     borderRadius: 8,
-    backgroundColor: '#ffffff',
+  },
+  priorityText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.white,
+  },
+  viewAllButton: {
+    backgroundColor: Colors.primaryLight,
+    borderRadius: 8,
     height: 42,
-    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
   },
-  voiceActionButton: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#2563eb',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  voiceActionButtonStop: {
-    backgroundColor: '#b91c1c',
-  },
-  voiceActionText: {
+  viewAllButtonText: {
     color: '#ffffff',
     fontWeight: '700',
-    fontSize: 12,
-  },
-  voiceError: {
-    color: '#b91c1c',
-    fontWeight: '600',
-    fontSize: 12,
-  },
-  voiceSuccess: {
-    color: '#166534',
-    fontWeight: '600',
-    fontSize: 12,
-  },
-  errorBox: {
-    backgroundColor: '#fff1f2',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: '#fecdd3',
-  },
-  errorText: {
-    color: '#b91c1c',
-    fontWeight: '600',
-  },
-  retryButton: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#fecaca',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  retryText: {
-    color: '#7f1d1d',
-    fontWeight: '700',
+    fontSize: 16,
   },
   loadingOverlay: {
     position: 'absolute',
-    top: 18,
-    right: 20,
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: '#dbeafe',
+    right: 18,
+    top: 14,
   },
-  fab: {
-    position: 'absolute',
-    right: 20,
-    bottom: 26,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#1d4ed8',
+  selectedTaskOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 4,
-    shadowColor: '#1d4ed8',
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 4 },
   },
-  fabText: {
-    color: '#ffffff',
-    fontSize: 28,
-    lineHeight: 30,
+  selectedTaskModalContent: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 24,
+    width: '80%',
+    maxWidth: 300,
+    alignItems: 'center',
+  },
+  selectedTaskTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  selectedTaskMeta: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  selectedTaskActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+  },
+  selectedTaskEditButton: {
+    backgroundColor: Colors.primary,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  selectedTaskEditButtonText: {
+    color: Colors.white,
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  selectedTaskDeleteButton: {
+    backgroundColor: Colors.error,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  selectedTaskDeleteButtonText: {
+    color: Colors.white,
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  selectedTaskCloseButton: {
+    backgroundColor: Colors.primary,
+    borderRadius: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    marginTop: 16,
+  },
+  selectedTaskCloseButtonText: {
+    color: Colors.white,
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  errorBox: {
+    backgroundColor: '#ffebee',
+    borderRadius: 12,
+    padding: 16,
+    margin: 16,
+    borderWidth: 1,
+    borderColor: Colors.error,
+  },
+  errorText: {
+    color: Colors.error,
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  retryButton: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignSelf: 'center',
+    marginTop: 12,
+  },
+  retryText: {
+    color: Colors.white,
     fontWeight: '600',
   },
 });

@@ -5,25 +5,49 @@
 
 import { Platform } from 'react-native';
 
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
-
 export const Colors = {
+  primary: '#1D9E75',        // Forest green — main CTA, active states, buttons
+  primaryLight: '#5DCAA5',   // Lighter green — hover, highlights
+  primarySurface: '#D4EDDA', // Soft green surface — card backgrounds, chips
+  accentOlive: '#639922',    // Olive green — secondary accent
+  accentAmber: '#BA7517',    // Amber — weather module, warm indicators
+  accentBlue: '#185FA5',     // Blue — analytics, progress module
+  accentTeal: '#0F6E56',     // Deep teal — darker green accent
+
+  bgLight: '#F4FAF5',        // App background — light mode
+  bgDark: '#0F1A14',         // App background — dark mode
+  surfaceLight: '#FFFFFF',   // Card surface — light mode
+  surfaceDark: '#162318',    // Card surface — dark mode
+  borderLight: '#C8E6C9',    // Border — light mode
+  borderDark: '#1B3A24',     // Border — dark mode
+
+  textPrimary: '#1A2E1E',    // Main text — light mode
+  textPrimaryDark: '#E8F5E9',// Main text — dark mode
+  textSecondary: '#4A7C59',  // Muted text — light mode
+  textSecondaryDark: '#5DAA7A', // Muted text — dark mode
+  textHint: '#7DA888',       // Hint/placeholder text
+
+  success: '#1D9E75',
+  warning: '#BA7517',
+  error: '#C0392B',
+  white: '#FFFFFF',
+
+  // Legacy theme structure for backward compatibility
   light: {
-    text: '#11181C',
-    background: '#fff',
-    tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
-    tabIconSelected: tintColorLight,
+    text: '#1A2E1E',
+    background: '#F4FAF5',
+    tint: '#1D9E75',
+    icon: '#4A7C59',
+    tabIconDefault: '#7DA888',
+    tabIconSelected: '#1D9E75',
   },
   dark: {
-    text: '#ECEDEE',
-    background: '#151718',
-    tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: tintColorDark,
+    text: '#E8F5E9',
+    background: '#0F1A14',
+    tint: '#5DCAA5',
+    icon: '#5DAA7A',
+    tabIconDefault: '#7DA888',
+    tabIconSelected: '#5DCAA5',
   },
 };
 

@@ -5,32 +5,23 @@ import { Platform } from 'react-native';
 function resolveBackendUrl() {
   const envUrl = process.env.EXPO_PUBLIC_BACKEND_URL?.trim();
   if (envUrl) {
+    console.log('Using backend URL from environment:', envUrl);
     return envUrl;
   }
 
-  // In Expo Go/dev, infer LAN IP from Expo host and use backend port 8000.
-  // This is required for physical devices (e.g., iPhone) to reach your computer.
-  const hostUri =
-    Constants.expoConfig?.hostUri ??
-    Constants.expoGoConfig?.debuggerHost ??
-    Constants.manifest2?.extra?.expoClient?.hostUri;
-
-  const host = typeof hostUri === 'string' ? hostUri.split(':')[0] : null;
-  if (host) {
-    return `http://${host}:8000`;
+  // In development, the backend runs on the same computer that serves the Expo bundle,
+  // so reuse that host (works for every teammate without editing IP addresses).
+  const devHost = Constants.expoConfig?.hostUri?.split(':')[0];
+  if (devHost) {
+    const BASE_URL = `http://${devHost}:8080`;
+    console.log('Using backend URL from Expo dev host:', BASE_URL);
+    return BASE_URL;
   }
 
-  // Android emulator needs 10.0.2.2 for host machine loopback.
-  if (Platform.OS === 'android') {
-    return 'http://10.0.2.2:8000';
-  }
-
-  // iOS simulator can reach the host machine via localhost.
-  if (Platform.OS === 'ios') {
-    return 'http://127.0.0.1:8000';
-  }
-
-  return 'http://127.0.0.1:8000';
+  // Fallback when no dev host is available (e.g. web on the same machine)
+  const BASE_URL = 'http://localhost:8080';
+  console.log('Using fallback backend URL:', BASE_URL);
+  return BASE_URL;
 }
 
 export const api = axios.create({
@@ -46,6 +37,11 @@ let requestUserId: string | null = process.env.EXPO_PUBLIC_USER_ID?.trim() || nu
 
 export function setApiAuthToken(token: string | null) {
   authToken = token;
+  if (token) {
+    api.defaults.headers.common['Authorization'] = `Token ${token}`;
+  } else {
+    delete api.defaults.headers.common['Authorization'];
+  }
 }
 
 export function setApiRequestUserId(userId: string | null) {

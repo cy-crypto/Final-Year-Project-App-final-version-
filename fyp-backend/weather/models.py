@@ -15,3 +15,16 @@ class SavedLocation(models.Model):
 
 	def __str__(self):
 		return f'{self.user_id} - {self.city}'
+
+
+class WeatherCache(models.Model):
+	city_key = models.CharField(max_length=120, unique=True, db_index=True)
+	city_name = models.CharField(max_length=120)
+	payload = models.JSONField()
+	fetched_at = models.DateTimeField(db_index=True)
+
+	class Meta:
+		ordering = ['-fetched_at']
+
+	def __str__(self):
+		return f'{self.city_name} @ {self.fetched_at.isoformat()}'
