@@ -4,12 +4,17 @@
     "slug": "fyp-project-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/icon.png",
     "scheme": "fypprojectapp",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.personalcompanion.fypprojectapp",
+      "infoPlist": {
+        "NSSpeechRecognitionUsageDescription": "Allow this app to convert your speech to text for voice commands.",
+        "NSMicrophoneUsageDescription": "Allow this app to use the microphone for voice commands.",
+        "NSMotionUsageDescription": "This app uses motion data to count your daily steps."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -18,11 +23,17 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACTIVITY_RECOGNITION"
+      ],
+      "package": "com.personalcompanion.fypprojectapp"
     },
     "web": {
-      "output": "static",
+      "output": "single",
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
@@ -51,11 +62,31 @@
           }
         }
       ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#ffffff"
+        }
+      ],
       "@react-native-community/datetimepicker",
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-audio",
+      "expo-sharing"
     ],
     "experiments": {
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "googleClientIdWeb": "",
+      "googleClientIdIos": "",
+      "googleClientIdAndroid": "",
+      "googleClientIdExpo": "",
+      "apiBaseUrl": "http://127.0.0.1:8000/api",
+      "eas": {
+        "projectId": "249e9427-b77b-4f2d-89f0-8bff6dbd4bf4"
+      }
+    },
+    "owner": "choudharyyousaf"
   }
 }

@@ -16,9 +16,9 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.conf import settings
-from django.conf.urls.static import static
 from django.http import JsonResponse
-from django.urls import include, path
+from django.urls import include, path, re_path
+from django.views.static import serve
 
 
 def api_root(_request):
@@ -30,6 +30,12 @@ def api_root(_request):
                 '/tasks/',
                 '/habits/',
                 '/weather/',
+                '/medications/',
+                '/api/budget/',
+                '/api/fitness/',
+                '/api/assistant/',
+                '/api/community/',
+                '/api/prayer/',
             ],
         }
     )
@@ -41,7 +47,14 @@ urlpatterns = [
     path('', include('tasks.urls')),
     path('', include('habits.urls')),
     path('', include('weather.urls')),
+    path('', include('medications.urls')),
+    path('api/budget/', include('budget.urls')),
+    path('api/fitness/', include('fitness.urls')),
+    path('api/assistant/', include('assistant.urls')),
+    path('api/community/', include('community.urls')),
+    path('api/prayer/', include('prayer.urls')),
 ]
 
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+# Uploads (avatars, post images, task files) are served by Django in every mode. On Render's free
+# plan the disk is wiped on each deploy or restart, so uploads there are temporary.
+urlpatterns += [re_path(r'^media/(?P<path>.*)$', serve, {'document_root': settings.MEDIA_ROOT})]

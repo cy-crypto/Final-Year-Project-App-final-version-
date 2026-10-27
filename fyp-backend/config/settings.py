@@ -11,15 +11,21 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 import os
+import sys
 from pathlib import Path
+from decouple import config
+import dj_database_url
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 def _load_env_file() -> None:
-    env_path = BASE_DIR / '.env'
-    if not env_path.exists():
+    # Local .env, or the .env uploaded as a Render secret file (/etc/secrets or the repo root).
+    # Variables already set in the environment win, so Render's DEBUG=False beats the file.
+    candidates = [BASE_DIR / '.env', Path('/etc/secrets/.env'), BASE_DIR.parent / '.env']
+    env_path = next((p for p in candidates if p.is_file()), None)
+    if env_path is None:
         return
 
     for raw_line in env_path.read_text(encoding='utf-8').splitlines():
@@ -32,7 +38,7 @@ def _load_env_file() -> None:
         value = value.strip().strip('"').strip("'")
 
         if key:
-            os.environ[key] = value
+            os.environ.setdefault(key, value)
 
 
 _load_env_file()
@@ -42,12 +48,17 @@ _load_env_file()
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-
+SECRET_KEY = config('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = config('DEBUG', default=False, cast=bool)
 
-ALLOWED_HOSTS = [host.strip() for host in os.getenv('DJANGO_ALLOWED_HOSTS', '*').split(',')]
+ALLOWED_HOSTS = ['*']
+
+# Render terminates HTTPS at its proxy; trust its header so request.is_secure() and absolute URLs use https
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+RENDER_EXTERNAL_HOSTNAME = config('RENDER_EXTERNAL_HOSTNAME', default='')
+CSRF_TRUSTED_ORIGINS = [f'https://{RENDER_EXTERNAL_HOSTNAME}'] if RENDER_EXTERNAL_HOSTNAME else []
 
 
 # Application definition
@@ -58,18 +69,27 @@ INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
+    # Before staticfiles so accounts' runserver (0.0.0.0:8080 default) takes priority
+    'accounts',
     'django.contrib.staticfiles',
     'corsheaders',
     'rest_framework',
     'rest_framework.authtoken',
-    'accounts',
+    'django_filters',
     'tasks',
     'habits',
     'weather',
+    'medications',
+    'budget',
+    'fitness',
+    'assistant',
+    'community',
+    'prayer',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -102,30 +122,9 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-use_sqlite = os.getenv('USE_SQLITE', 'False').lower() == 'true'
-supabase_host = os.getenv('SUPABASE_DB_HOST', '').strip()
-
-if use_sqlite or not supabase_host:
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
-        }
-    }
-else:
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': os.getenv('SUPABASE_DB_NAME', 'postgres'),
-            'USER': os.getenv('SUPABASE_DB_USER', 'postgres'),
-            'PASSWORD': os.getenv('SUPABASE_DB_PASSWORD', ''),
-            'HOST': supabase_host,
-            'PORT': os.getenv('SUPABASE_DB_PORT', '5432'),
-            'OPTIONS': {
-                'sslmode': os.getenv('SUPABASE_DB_SSLMODE', 'require'),
-            },
-        }
-    }
+DATABASES = {
+    'default': dj_database_url.config(default=config('DATABASE_URL'), conn_max_age=600, conn_health_checks=True)
+}
 
 
 # Password validation
@@ -163,13 +162,14 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # CORS config for React Native / Expo development
-CORS_ALLOW_ALL_ORIGINS = os.getenv('CORS_ALLOW_ALL_ORIGINS', 'True').lower() == 'true'
+CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:19006',
     'http://127.0.0.1:19006',
@@ -180,9 +180,65 @@ CORS_ALLOWED_ORIGINS = [
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.TokenAuthentication',
+        'accounts.supabase_auth.SupabaseJWTAuthentication',
+        'accounts.dev_auth.DevBypassAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.AllowAny',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'assistant': '30/min',
+        'assistant_voice': '20/min',
+    },
+    'DEFAULT_FILTER_BACKENDS': [
+        'django_filters.rest_framework.DjangoFilterBackend',
     ]
 }
+
+# Supabase Auth: the app signs users in with Supabase and sends the access token (JWT) here.
+SUPABASE_URL = config('SUPABASE_URL', default='').rstrip('/')
+# Only needed if the project still uses the legacy HS256 JWT secret (not asymmetric signing keys).
+SUPABASE_JWT_SECRET = config('SUPABASE_JWT_SECRET', default='')
+# Login disabled for now: requests without a token act as one shared demo user, also on the deployed
+# backend (render.yaml sets it). Turn it off to require Supabase sign-in. Never on during
+# `manage.py test`, so the auth tests keep checking real authentication.
+DEV_AUTH_BYPASS = config('DEV_AUTH_BYPASS', default=False, cast=bool) and 'test' not in sys.argv[1:2]
+
+EMAIL_BACKEND = config('EMAIL_BACKEND', default='')
+if not EMAIL_BACKEND:
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend' if config('EMAIL_HOST', default='') else 'django.core.mail.backends.console.EmailBackend'
+
+DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='noreply@example.com')
+EMAIL_HOST = config('EMAIL_HOST', default='')
+EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
+EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
+EMAIL_USE_SSL = config('EMAIL_USE_SSL', default=False, cast=bool)
+
+# AI assistant: the chatbot calls Gemini (then Groq) with tools that act on the signed-in user's data.
+def _api_keys(prefix):
+    """Every key set as PREFIX, PREFIX_2, PREFIX_BACKUP ... (each value may also be comma-separated).
+    They are tried in name order; when one hits its limit the next is used."""
+    names = sorted((n for n in os.environ if n == prefix or n.startswith(prefix + '_')),
+                   key=lambda n: (n != prefix, n))
+    keys = []
+    for name in names:
+        for key in os.environ[name].split(','):
+            key = key.strip().strip('"').strip("'")
+            if key and key not in keys:
+                keys.append(key)
+    return keys
+
+
+GEMINI_API_KEYS = _api_keys('GEMINI_API_KEY')
+GROQ_API_KEYS = _api_keys('GROQ_API_KEY')
+# Comma-separated, tried in order: free-tier quotas are per model, so later ones are fallbacks.
+ASSISTANT_MODELS = [m.strip() for m in (
+    config('GEMINI_MODEL', default='') or 'gemini-3.5-flash,gemini-3.1-flash-lite,gemini-3-flash-preview'
+).split(',') if m.strip()]
+ASSISTANT_TTS_MODEL = config('GEMINI_TTS_MODEL', default='') or 'gemini-3.8-flash-tts'
+GROQ_MODELS = [m.strip() for m in (
+    config('GROQ_MODEL', default='') or 'openai/gpt-oss-120b,openai/gpt-oss-20b'
+).split(',') if m.strip()]
+GROQ_STT_MODEL = config('GROQ_STT_MODEL', default='') or 'whisper-large-v3'

@@ -1,13 +1,28 @@
 import { api, parseJsonData } from './api';
+import { supabase } from './supabase';
+
+export type Preferences = {
+  temperature_unit: 'C' | 'F';
+  notify_tasks: boolean;
+  notify_habits: boolean;
+  notify_medication: boolean;
+  notify_prayer: boolean;
+  notify_weather_alerts: boolean;
+  prayer_method: number;
+  prayer_school: number;
+  community_visible: boolean;
+};
 
 export type AuthPayload = {
-  token: string;
   email: string;
   user_id: string;
   full_name: string;
   avatar_url: string;
   bio: string;
   selected_city: string;
+  timezone?: string;
+  preferences?: Preferences;
+  member_since?: string;
 };
 
 export type ProfilePayload = {
@@ -15,35 +30,21 @@ export type ProfilePayload = {
   avatar_url: string;
   bio: string;
   selected_city: string;
+  timezone?: string;
+  preferences?: Preferences;
+  email?: string;
+  member_since?: string;
 };
 
-type UpdateProfileInput = Partial<ProfilePayload> & {
+type UpdateProfileInput = Partial<Omit<ProfilePayload, 'preferences' | 'email' | 'member_since'>> & {
   avatar_image_uri?: string;
+  preferences?: Partial<Preferences>;
+  remove_avatar?: boolean;
 };
-
-export async function signup(email: string, password: string): Promise<AuthPayload> {
-  const response = await api.post('/auth/signup/', {
-    email,
-    password,
-  });
-  return parseJsonData<AuthPayload>(response.data);
-}
-
-export async function login(email: string, password: string): Promise<AuthPayload> {
-  const response = await api.post('/auth/login/', {
-    email,
-    password,
-  });
-  return parseJsonData<AuthPayload>(response.data);
-}
 
 export async function me(): Promise<AuthPayload> {
   const response = await api.get('/auth/me/');
   return parseJsonData<AuthPayload>(response.data);
-}
-
-export async function logout(): Promise<void> {
-  await api.post('/auth/logout/');
 }
 
 export async function getProfile(): Promise<ProfilePayload> {
@@ -87,4 +88,28 @@ export async function updateProfile(input: UpdateProfileInput): Promise<ProfileP
 
   const response = await api.patch('/auth/profile/', formData);
   return parseJsonData<ProfilePayload>(response.data);
+}
+
+export async function requestPasswordReset(email: string): Promise<{ detail?: string }> {
+  const { error } = await supabase.auth.resetPasswordForEmail(email);
+  if (error) {
+    throw new Error(error.message);
+  }
+  return { detail: 'If the account exists, a reset code was sent to your email.' };
+}
+
+export async function resetPassword(email: string, code: string, newPassword: string): Promise<{ detail?: string }> {
+  const verified = await supabase.auth.verifyOtp({ email, token: code, type: 'recovery' });
+  if (verified.error) {
+    throw new Error(verified.error.message);
+  }
+
+  const updated = await supabase.auth.updateUser({ password: newPassword });
+  if (updated.error) {
+    throw new Error(updated.error.message);
+  }
+
+  // The recovery code signs the user in; make them log in explicitly with the new password.
+  await supabase.auth.signOut();
+  return { detail: 'Password updated. You can now sign in with the new password.' };
 }

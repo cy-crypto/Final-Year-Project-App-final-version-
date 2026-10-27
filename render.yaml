@@ -1,0 +1,44 @@
+# Render Blueprint (free plan): the Django backend and the web version of the Expo app.
+# Secrets are not listed here. After creating the services, upload them as Secret Files
+# (service > Environment > Secret Files):
+#   backend: .env      - DATABASE_URL must be the Supabase Session pooler URI
+#   app:     .env.local and .env.development - EXPO_PUBLIC_BACKEND_URL must be the backend's
+#            https://....onrender.com URL; keep EXPO_PUBLIC_AUTH_BYPASS=1 while login is disabled
+services:
+  - type: web
+    name: personal-companion-backend
+    runtime: python
+    plan: free
+    rootDir: fyp-backend
+    buildCommand: bash build.sh
+    startCommand: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.14.3
+      # Set here so they win over the uploaded .env (which has DEBUG=True for local use)
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      # Login disabled for now: requests without a token use a shared demo user. Set to "False"
+      # (and remove EXPO_PUBLIC_AUTH_BYPASS from the app builds) to require Supabase sign-in.
+      - key: DEV_AUTH_BYPASS
+        value: "True"
+
+  - type: web
+    name: personal-companion-app
+    runtime: static
+    rootDir: fyp-project-app
+    buildCommand: bash render-build.sh
+    staticPublishPath: dist
+    # Single-page app: every path loads index.html and React Navigation takes over
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: NODE_VERSION
+        value: 24.14.0
+      - key: EXPO_ROUTER_DISABLE_RN_NAVIGATION_CHECK
+        value: "1"

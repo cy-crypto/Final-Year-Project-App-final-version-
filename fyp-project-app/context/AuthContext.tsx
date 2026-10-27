@@ -1,14 +1,16 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { Session } from '@supabase/supabase-js';
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { Platform } from 'react-native';
 import { toApiErrorMessage, setApiAuthToken, setApiRequestUserId } from '../services/api';
 import {
-  login as loginRequest,
-  logout as logoutRequest,
   me as meRequest,
-  signup as signupRequest,
   updateProfile as updateProfileRequest,
+  type AuthPayload,
+  type Preferences,
 } from '../services/authService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+import { supabase } from '../services/supabase';
+import { deviceTimezone, setReminderPreferences } from '../services/reminderService';
 
 type AuthUser = {
   email: string;
@@ -18,141 +20,102 @@ type AuthUser = {
   avatarUrl: string;
   bio: string;
   selectedCity: string;
+  timezone: string;
+  preferences: Preferences | null;
+  memberSince: string;
 };
+
+type ProfileUpdate = {
+  fullName?: string;
+  avatarUrl?: string;
+  avatarImageUri?: string;
+  removeAvatar?: boolean;
+  bio?: string;
+  selectedCity?: string;
+  timezone?: string;
+  preferences?: Partial<Preferences>;
+};
+
+type AuthResult = { ok: boolean; error?: string; needsVerification?: boolean };
 
 type AuthContextValue = {
   isLoading: boolean;
   isAuthenticated: boolean;
   user: AuthUser | null;
-  login: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
-  signup: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
-  updateProfile: (input: {
-    fullName?: string;
-    avatarUrl?: string;
-    avatarImageUri?: string;
-    bio?: string;
-    selectedCity?: string;
-  }) => Promise<{ ok: boolean; error?: string }>;
+  login: (email: string, password: string) => Promise<AuthResult>;
+  signup: (email: string, password: string, fullName?: string) => Promise<AuthResult>;
+  verifyEmail: (email: string, code: string) => Promise<AuthResult>;
+  resendVerification: (email: string) => Promise<AuthResult>;
+  updateProfile: (input: ProfileUpdate) => Promise<{ ok: boolean; error?: string }>;
   logout: () => Promise<void>;
 };
 
-const STORAGE_KEY = 'app.auth.user';
-const memoryStore = new Map<string, string>();
-let useMemoryStorage = false;
-
-async function safeGetItem(key: string) {
-  if (Platform.OS === 'web') {
-    try {
-      return window?.localStorage?.getItem(key) ?? null;
-    } catch {
-      return null;
-    }
-  }
-
-  if (useMemoryStorage) {
-    return memoryStore.get(key) ?? null;
-  }
-
-  try {
-    return await AsyncStorage.getItem(key);
-  } catch (error) {
-    useMemoryStorage = true;
-    console.warn('AsyncStorage unavailable, falling back to memory storage', error);
-    return memoryStore.get(key) ?? null;
-  }
-}
-
-async function safeSetItem(key: string, value: string) {
-  if (Platform.OS === 'web') {
-    try {
-      window?.localStorage?.setItem(key, value);
-      return;
-    } catch {
-      return;
-    }
-  }
-
-  if (useMemoryStorage) {
-    memoryStore.set(key, value);
-    return;
-  }
-
-  try {
-    await AsyncStorage.setItem(key, value);
-  } catch (error) {
-    useMemoryStorage = true;
-    console.warn('AsyncStorage unavailable, falling back to memory storage', error);
-    memoryStore.set(key, value);
-  }
-}
-
-async function safeRemoveItem(key: string) {
-  if (Platform.OS === 'web') {
-    try {
-      window?.localStorage?.removeItem(key);
-      return;
-    } catch {
-      return;
-    }
-  }
-
-  if (useMemoryStorage) {
-    memoryStore.delete(key);
-    return;
-  }
-
-  try {
-    await AsyncStorage.removeItem(key);
-  } catch (error) {
-    useMemoryStorage = true;
-    console.warn('AsyncStorage unavailable, falling back to memory storage', error);
-    memoryStore.delete(key);
-  }
-}
-
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+
+// DEV ONLY: login disabled. "Sign in" skips Supabase and loads the backend's demo user
+// (needs DEV_AUTH_BYPASS=True in fyp-backend/.env). Turn off by removing EXPO_PUBLIC_AUTH_BYPASS.
+const AUTH_BYPASS = process.env.EXPO_PUBLIC_AUTH_BYPASS === '1';
+const BYPASS_KEY = 'auth.bypassSignedIn';
+
+function toAuthUser(payload: AuthPayload, token: string): AuthUser {
+  return {
+    email: payload.email,
+    token,
+    userId: payload.user_id,
+    fullName: payload.full_name ?? '',
+    avatarUrl: payload.avatar_url ?? '',
+    bio: payload.bio ?? '',
+    selectedCity: payload.selected_city ?? '',
+    timezone: payload.timezone ?? '',
+    preferences: payload.preferences ?? null,
+    memberSince: payload.member_since ?? '',
+  };
+}
+
+function isValidEmail(email: string) {
+  return Boolean(email) && email.includes('@');
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  const clearSession = () => {
+    setApiAuthToken(null);
+    setApiRequestUserId(null);
+    setUser(null);
+  };
+
+  // Points the API client at the Supabase access token and loads the backend profile for it.
+  const hydrate = async (session: Session) => {
+    setApiAuthToken(session.access_token);
+    const payload = await meRequest();
+    setApiRequestUserId(payload.user_id);
+    const nextUser = toAuthUser(payload, session.access_token);
+    setUser(nextUser);
+    return nextUser;
+  };
+
   useEffect(() => {
     const restoreSession = async () => {
       try {
-        const raw = await safeGetItem(STORAGE_KEY);
-        if (!raw) {
+        // Stay signed in as the demo user across app reloads (e.g. after changing the theme).
+        if (AUTH_BYPASS && (await AsyncStorage.getItem(BYPASS_KEY)) === '1') {
+          const payload = await meRequest();
+          setApiRequestUserId(payload.user_id);
+          setUser(toAuthUser(payload, ''));
           return;
         }
-
-        const parsed = JSON.parse(raw) as AuthUser;
-        if (parsed?.email && parsed?.token && parsed?.userId) {
-          setApiAuthToken(parsed.token);
-          setApiRequestUserId(parsed.userId);
-
+        const { data } = await supabase.auth.getSession();
+        if (data.session) {
           try {
-            const current = await meRequest();
-            const nextUser = {
-              email: current.email,
-              token: current.token,
-              userId: current.user_id,
-              fullName: current.full_name ?? '',
-              avatarUrl: current.avatar_url ?? '',
-              bio: current.bio ?? '',
-              selectedCity: current.selected_city ?? '',
-            };
-            setUser(nextUser);
-            await safeSetItem(STORAGE_KEY, JSON.stringify(nextUser));
-            return;
+            await hydrate(data.session);
           } catch (error) {
-            console.warn('Stored auth token is invalid, clearing session', error);
-            setApiAuthToken(null);
-            setApiRequestUserId(null);
-            await safeRemoveItem(STORAGE_KEY);
-            setUser(null);
-            return;
+            console.warn('Stored session is invalid, clearing it', error);
+            await supabase.auth.signOut();
+            clearSession();
           }
         }
-
       } catch (error) {
         console.warn('Failed to restore auth session', error);
       } finally {
@@ -161,12 +124,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     restoreSession();
+
+    // Keep the API client on a fresh token (supabase-js refreshes access tokens automatically).
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        clearSession();
+      } else if (event === 'TOKEN_REFRESHED' && session) {
+        setApiAuthToken(session.access_token);
+        setUser((current) => (current ? { ...current, token: session.access_token } : current));
+      }
+    });
+
+    return () => listener.subscription.unsubscribe();
   }, []);
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string): Promise<AuthResult> => {
+    if (AUTH_BYPASS) {
+      try {
+        setApiAuthToken(null);
+        const payload = await meRequest();
+        setApiRequestUserId(payload.user_id);
+        setUser(toAuthUser(payload, ''));
+        await AsyncStorage.setItem(BYPASS_KEY, '1');
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: toApiErrorMessage(err, 'Could not load the demo user.') };
+      }
+    }
+
     const cleanEmail = email.trim().toLowerCase();
 
-    if (!cleanEmail || !cleanEmail.includes('@')) {
+    if (!isValidEmail(cleanEmail)) {
       return { ok: false, error: 'Enter a valid email address.' };
     }
 
@@ -174,35 +162,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { ok: false, error: 'Password must be at least 8 characters.' };
     }
 
-    try {
-      const payload = await loginRequest(cleanEmail, password);
-      const nextUser = {
-        email: payload.email,
-        token: payload.token,
-        userId: payload.user_id,
-        fullName: payload.full_name ?? '',
-        avatarUrl: payload.avatar_url ?? '',
-        bio: payload.bio ?? '',
-        selectedCity: payload.selected_city ?? '',
-      };
+    const { data, error } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
+    if (error) {
+      if (error.code === 'email_not_confirmed') {
+        await supabase.auth.resend({ type: 'signup', email: cleanEmail });
+        return { ok: false, needsVerification: true, error: 'Please verify your email first. We sent you a new code.' };
+      }
+      return { ok: false, error: error.message };
+    }
 
-      setApiAuthToken(nextUser.token);
-      setApiRequestUserId(nextUser.userId);
-      setUser(nextUser);
-      await safeSetItem(STORAGE_KEY, JSON.stringify(nextUser));
+    try {
+      await hydrate(data.session);
       return { ok: true };
-    } catch (error) {
-      return {
-        ok: false,
-        error: toApiErrorMessage(error, 'Login failed. Please try again.'),
-      };
+    } catch (err) {
+      await supabase.auth.signOut();
+      return { ok: false, error: toApiErrorMessage(err, 'Login failed. Please try again.') };
     }
   };
 
-  const signup = async (email: string, password: string) => {
+  const signup = async (email: string, password: string, fullName?: string): Promise<AuthResult> => {
     const cleanEmail = email.trim().toLowerCase();
 
-    if (!cleanEmail || !cleanEmail.includes('@')) {
+    if (!isValidEmail(cleanEmail)) {
       return { ok: false, error: 'Enter a valid email address.' };
     }
 
@@ -210,38 +191,52 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { ok: false, error: 'Password must be at least 8 characters.' };
     }
 
-    try {
-      const payload = await signupRequest(cleanEmail, password);
-      const nextUser = {
-        email: payload.email,
-        token: payload.token,
-        userId: payload.user_id,
-        fullName: payload.full_name ?? '',
-        avatarUrl: payload.avatar_url ?? '',
-        bio: payload.bio ?? '',
-        selectedCity: payload.selected_city ?? '',
-      };
+    const { data, error } = await supabase.auth.signUp({
+      email: cleanEmail,
+      password,
+      options: { data: { full_name: fullName?.trim() ?? '' } },
+    });
+    if (error) {
+      return { ok: false, error: error.message };
+    }
 
-      setApiAuthToken(nextUser.token);
-      setApiRequestUserId(nextUser.userId);
-      setUser(nextUser);
-      await safeSetItem(STORAGE_KEY, JSON.stringify(nextUser));
+    // With "Confirm email" enabled in Supabase no session is issued until the code is verified.
+    if (!data.session) {
+      return { ok: true, needsVerification: true };
+    }
+
+    try {
+      await hydrate(data.session);
       return { ok: true };
-    } catch (error) {
-      return {
-        ok: false,
-        error: toApiErrorMessage(error, 'Signup failed. Please try again.'),
-      };
+    } catch (err) {
+      return { ok: false, error: toApiErrorMessage(err, 'Signup failed. Please try again.') };
     }
   };
 
-  const updateProfile = async (input: {
-    fullName?: string;
-    avatarUrl?: string;
-    avatarImageUri?: string;
-    bio?: string;
-    selectedCity?: string;
-  }) => {
+  const verifyEmail = async (email: string, code: string): Promise<AuthResult> => {
+    const { data, error } = await supabase.auth.verifyOtp({
+      email: email.trim().toLowerCase(),
+      token: code.trim(),
+      type: 'signup',
+    });
+    if (error || !data.session) {
+      return { ok: false, error: error?.message ?? 'Invalid or expired code.' };
+    }
+
+    try {
+      await hydrate(data.session);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: toApiErrorMessage(err, 'Could not finish signing in.') };
+    }
+  };
+
+  const resendVerification = async (email: string): Promise<AuthResult> => {
+    const { error } = await supabase.auth.resend({ type: 'signup', email: email.trim().toLowerCase() });
+    return error ? { ok: false, error: error.message } : { ok: true };
+  };
+
+  const updateProfile = async (input: ProfileUpdate) => {
     if (!user) {
       return { ok: false, error: 'Not authenticated.' };
     }
@@ -251,20 +246,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         full_name: input.fullName,
         avatar_url: input.avatarUrl,
         avatar_image_uri: input.avatarImageUri,
+        remove_avatar: input.removeAvatar,
         bio: input.bio,
         selected_city: input.selectedCity,
+        timezone: input.timezone,
+        preferences: input.preferences,
       });
 
-      const nextUser: AuthUser = {
-        ...user,
-        fullName: payload.full_name ?? '',
-        avatarUrl: payload.avatar_url ?? '',
-        bio: payload.bio ?? '',
-        selectedCity: payload.selected_city ?? '',
-      };
-
-      setUser(nextUser);
-      await safeSetItem(STORAGE_KEY, JSON.stringify(nextUser));
+      setUser((current) =>
+        current
+          ? {
+              ...current,
+              fullName: payload.full_name ?? '',
+              avatarUrl: payload.avatar_url ?? '',
+              bio: payload.bio ?? '',
+              selectedCity: payload.selected_city ?? '',
+              timezone: payload.timezone ?? current.timezone,
+              preferences: payload.preferences ?? current.preferences,
+            }
+          : current
+      );
       return { ok: true };
     } catch (error) {
       return {
@@ -275,17 +276,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
-    try {
-      await logoutRequest();
-    } catch (error) {
-      console.warn('Backend logout failed, clearing local session anyway', error);
+    await AsyncStorage.removeItem(BYPASS_KEY).catch(() => {});
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      console.warn('Supabase sign out failed, clearing local session anyway', error);
     }
-
-    setApiAuthToken(null);
-    setApiRequestUserId(null);
-    setUser(null);
-    await safeRemoveItem(STORAGE_KEY);
+    clearSession();
   };
+
+  // Profile module: keep the server on the phone's time zone (dose schedules use it) and
+  // let reminders follow the notification switches in the profile preferences.
+  useEffect(() => {
+    if (!user) return;
+    setReminderPreferences(user.preferences);
+    const tz = deviceTimezone();
+    if (tz && tz !== user.timezone) {
+      updateProfileRequest({ timezone: tz })
+        .then((payload) => setUser((current) => (current ? { ...current, timezone: payload.timezone ?? tz } : current)))
+        .catch((error) => console.warn('Could not save time zone', error));
+    }
+  }, [user]);
 
   const value = useMemo(
     () => ({
@@ -294,6 +304,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user,
       login,
       signup,
+      verifyEmail,
+      resendVerification,
       updateProfile,
       logout,
     }),

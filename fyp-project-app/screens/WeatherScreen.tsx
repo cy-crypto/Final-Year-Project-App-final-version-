@@ -1,478 +1,452 @@
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
+import { Ionicons } from '@expo/vector-icons';
 
-import { ScreenContainer } from '../components/ScreenContainer';
 import { useAppContext } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
-import { fetchWeatherByCity, type WeatherSnapshot } from '../services/weatherService';
+import { Colors, Font, Radius, Shadows } from '../constants/theme';
+import {
+  fetchAirPollution,
+  fetchUVIndex,
+  fetchWeather,
+  formatTemperature,
+  type WeatherSnapshot,
+} from '../services/weatherService';
 import {
   addSavedLocation,
   deleteSavedLocation,
   getSavedLocations,
   type SavedLocationDto,
 } from '../services/weatherLocationService';
+import { notifyWeatherAlert } from '../services/reminderService';
+import {
+  Card,
+  CenterLoader,
+  EmptyCard,
+  Field,
+  HeroCard,
+  HeroStat,
+  HeroStats,
+  Input,
+  ListRow,
+  ModuleHeader,
+  PillTabs,
+  PrimaryButton,
+  SecondaryButton,
+  moduleStyles,
+} from '../components/module/ModuleUI';
+import { aqiInfo, cityTime, dayLabel, isNight, outdoorAdvice, uvInfo, weatherIcon } from '../utils/weatherFormat';
+
+type TabKey = 'today' | 'forecast' | 'places';
+type Place = { city?: string; lat?: number; lon?: number };
+
+const CACHE_KEY = 'weather.lastSnapshot';
+const REFRESH_MS = 10 * 60 * 1000;
 
 export function WeatherScreen() {
   const { setWeather } = useAppContext();
-  const { user, updateProfile } = useAuth();
-  const [cityInput, setCityInput] = useState('London');
+  const { user } = useAuth();
+  const unit = user?.preferences?.temperature_unit ?? 'C';
+  const t = (c?: number) => formatTemperature(c, unit);
+
+  const [tab, setTab] = useState<TabKey>('today');
+  const [place, setPlace] = useState<Place | null>(null);
   const [weather, setLocalWeather] = useState<WeatherSnapshot | null>(null);
-  const [savedLocations, setSavedLocations] = useState<SavedLocationDto[]>([]);
-  const [savedWeatherByCity, setSavedWeatherByCity] = useState<Record<string, WeatherSnapshot>>({});
-  const [loading, setLoading] = useState(false);
+  const [uv, setUv] = useState<number | null>(null);
+  const [aqi, setAqi] = useState<number | null>(null);
+  const [saved, setSaved] = useState<SavedLocationDto[]>([]);
+  const [savedWeather, setSavedWeather] = useState<Record<string, WeatherSnapshot>>({});
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [staleAt, setStaleAt] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [cityInput, setCityInput] = useState('');
+  const [locating, setLocating] = useState(false);
+  const placeRef = useRef<Place | null>(null);
 
-  const loadSaved = async (refreshWeather = true) => {
-    try {
-      const rows = await getSavedLocations();
-      setSavedLocations(rows);
-      if (refreshWeather) {
-        await refreshSavedLocationWeather(rows.map((row) => row.city));
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to load saved locations.';
-      setError(message);
-    }
-  };
-
-  const refreshSavedLocationWeather = async (cities: string[]) => {
-    const uniqueCities = Array.from(new Set(cities.map((city) => city.trim()).filter(Boolean)));
-    if (uniqueCities.length === 0) {
-      return;
-    }
-
-    const settled = await Promise.allSettled(uniqueCities.map((city) => fetchWeatherByCity(city)));
-    const nextMap: Record<string, WeatherSnapshot> = {};
-
-    settled.forEach((entry, index) => {
-      const cityKey = uniqueCities[index];
-      if (entry.status === 'fulfilled') {
-        nextMap[cityKey.toLowerCase()] = entry.value;
-      }
-    });
-
-    setSavedWeatherByCity((prev) => ({ ...prev, ...nextMap }));
-  };
-
-  const loadByCity = async (city: string, persistSelection = true, silent = false) => {
-    const clean = city.trim();
-    if (!clean) {
-      setError('Please enter a city name.');
-      return;
-    }
-
-    if (!silent) {
-      setLoading(true);
-    }
-    if (!silent) {
-      setError(null);
-      setNotice(null);
-    }
-
-    try {
-      const snapshot = await fetchWeatherByCity(clean);
-      setLocalWeather({ ...snapshot, city: snapshot.city || clean });
-      setSavedWeatherByCity((prev) => ({
-        ...prev,
-        [clean.toLowerCase()]: { ...snapshot, city: snapshot.city || clean },
-      }));
-      setWeather({
-        city: snapshot.city || clean,
-        temperatureC: snapshot.temperatureC,
-        condition: snapshot.condition,
-        updatedAt: snapshot.updatedAt,
-      });
-
-      if (persistSelection) {
-        await updateProfile({ selectedCity: snapshot.city || clean });
-      }
-      if (!silent) {
-        setNotice(`Showing latest weather for ${snapshot.city || clean}.`);
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to fetch weather for that city.';
-      if (!silent) {
-        setError(message);
-      }
-    } finally {
-      if (!silent) {
+  const load = useCallback(
+    async (target: Place, quiet = false) => {
+      if (!quiet) setError(null);
+      try {
+        const snapshot = await fetchWeather(target);
+        setLocalWeather(snapshot);
+        setStaleAt(null);
+        setWeather({ city: snapshot.city, temperatureC: snapshot.temperatureC, condition: snapshot.condition, updatedAt: snapshot.updatedAt });
+        AsyncStorage.setItem(CACHE_KEY, JSON.stringify({ savedAt: new Date().toISOString(), snapshot })).catch(() => {});
+        for (const alert of snapshot.alerts ?? []) {
+          notifyWeatherAlert(alert.id, `${alert.title} · ${snapshot.city}`, alert.message);
+        }
+        if (snapshot.lat !== undefined && snapshot.lon !== undefined) {
+          fetchUVIndex(snapshot.lat, snapshot.lon).then((r) => setUv(r.uv_index ?? null)).catch(() => setUv(null));
+          fetchAirPollution(snapshot.lat, snapshot.lon).then((r) => setAqi(r.aqi ?? null)).catch(() => setAqi(null));
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unable to load weather.';
+        // Offline: keep showing the last weather that loaded, with a notice.
+        const raw = await AsyncStorage.getItem(CACHE_KEY).catch(() => null);
+        if (raw) {
+          const cached = JSON.parse(raw) as { savedAt: string; snapshot: WeatherSnapshot };
+          setLocalWeather((current) => current ?? cached.snapshot);
+          setStaleAt(cached.savedAt);
+        }
+        if (!quiet) setError(message);
+      } finally {
         setLoading(false);
+        setRefreshing(false);
       }
-    }
-  };
+    },
+    [setWeather]
+  );
 
-  const loadByLocation = async () => {
+  const choose = useCallback(
+    (target: Place) => {
+      placeRef.current = target;
+      setPlace(target);
+      load(target);
+    },
+    [load]
+  );
+
+  const devicePlace = useCallback(async (): Promise<Place | null> => {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') return null;
+    const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+    let city: string | undefined;
+    try {
+      const [geo] = await Location.reverseGeocodeAsync(pos.coords);
+      city = geo?.city || geo?.subregion || undefined;
+    } catch {
+      city = undefined;
+    }
+    // Sending both lets the server fall back to the coordinates if the city name is not found.
+    return { city, lat: pos.coords.latitude, lon: pos.coords.longitude };
+  }, []);
+
+  // Start: device location → city in the profile → ask.
+  useEffect(() => {
+    (async () => {
+      let target: Place | null = null;
+      try {
+        target = await devicePlace();
+      } catch {
+        target = null;
+      }
+      if (!target && user?.selectedCity) target = { city: user.selectedCity };
+      if (target) choose(target);
+      else {
+        setLoading(false);
+        setPickerOpen(true);
+      }
+    })();
+    getSavedLocations().then(setSaved).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const id = setInterval(() => placeRef.current && load(placeRef.current, true), REFRESH_MS);
+    return () => clearInterval(id);
+  }, [load]);
+
+  useEffect(() => {
+    if (tab !== 'places' || saved.length === 0) return;
+    Promise.allSettled(saved.map((s) => fetchWeather({ city: s.city }))).then((results) => {
+      const next: Record<string, WeatherSnapshot> = {};
+      results.forEach((r, i) => {
+        if (r.status === 'fulfilled') next[saved[i].city] = r.value;
+      });
+      setSavedWeather(next);
+    });
+  }, [tab, saved]);
+
+  const pickCity = () => {
+    const city = cityInput.trim();
+    if (!city) return;
+    setPickerOpen(false);
+    setCityInput('');
     setLoading(true);
-    setError(null);
-    setNotice(null);
+    choose({ city });
+  };
 
+  const pickGps = async () => {
+    setLocating(true);
     try {
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (permission.status !== 'granted') {
-        setError('Location permission denied.');
+      const target = await devicePlace();
+      if (!target) {
+        setError('Location permission is off. Type a city instead.');
         return;
       }
-
-      const position = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-
-      const reverse = await Location.reverseGeocodeAsync({
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-      });
-
-      const resolvedCity =
-        reverse[0]?.city || reverse[0]?.subregion || reverse[0]?.region || reverse[0]?.district;
-
-      if (!resolvedCity) {
-        setError('Unable to detect city from current location.');
-        return;
-      }
-
-      const snapshot = await fetchWeatherByCity(resolvedCity);
-
-      setLocalWeather(snapshot);
-      setWeather({
-        city: snapshot.city,
-        temperatureC: snapshot.temperatureC,
-        condition: snapshot.condition,
-        updatedAt: snapshot.updatedAt,
-      });
-      setCityInput(snapshot.city);
-      await updateProfile({ selectedCity: snapshot.city });
-      setNotice(`Using device location: ${snapshot.city}.`);
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Unable to fetch weather using device location.';
-      setError(message);
+      setPickerOpen(false);
+      setLoading(true);
+      choose(target);
+    } catch {
+      setError('Could not get your location. Type a city instead.');
     } finally {
-      setLoading(false);
+      setLocating(false);
     }
   };
 
-  const handleSaveCurrentCity = async () => {
-    const clean = cityInput.trim();
-    if (!clean) {
-      setError('Enter a city before saving location.');
-      return;
-    }
-
-    setError(null);
-    setNotice(null);
-
+  const saveCurrent = async () => {
+    if (!weather) return;
     try {
-      await addSavedLocation(clean);
-      await loadSaved(false);
-      await refreshSavedLocationWeather([clean]);
-      await updateProfile({ selectedCity: clean });
-      setNotice(`${clean} saved to your locations.`);
+      const row = await addSavedLocation(weather.city);
+      setSaved((prev) => [row, ...prev]);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to save location.';
-      setError(message);
+      Alert.alert('Not saved', err instanceof Error && /409|already/i.test(err.message) ? 'This place is already saved.' : 'Could not save this place.');
     }
   };
 
-  const handleDeleteLocation = async (id: string) => {
-    try {
-      await deleteSavedLocation(id);
-      await loadSaved(false);
-      setNotice('Saved location removed.');
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to delete location.';
-      setError(message);
-    }
-  };
+  const removeSaved = (row: SavedLocationDto) =>
+    Alert.alert('Remove place', row.city, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteSavedLocation(row.id);
+            setSaved((prev) => prev.filter((s) => s.id !== row.id));
+          } catch {
+            Alert.alert('Error', 'Could not remove this place.');
+          }
+        },
+      },
+    ]);
 
-  useEffect(() => {
-    const selectedCity = user?.selectedCity?.trim();
-    const initialCity = selectedCity || 'London';
-    setCityInput(initialCity);
-    loadByCity(initialCity, false);
-    loadSaved();
-  }, [user?.selectedCity]);
+  const renderToday = () => {
+    if (!weather) return <EmptyCard text={error ?? 'Choose a place to see the weather.'} icon="partly-sunny-outline" />;
+    const night = isNight(weather);
+    const advice = outdoorAdvice(weather, aqi);
+    const air = aqiInfo(aqi);
+    const uvi = uvInfo(uv);
+    return (
+      <>
+        <HeroCard label={`${weather.city}${weather.fromGps ? ' (GPS)' : ''} · ${weather.description ?? weather.condition}`} value={t(weather.temperatureC)}>
+          <Ionicons name={weatherIcon(weather.condition, night)} size={46} color={Colors.white} style={styles.heroIcon} />
+          <HeroStats>
+            <HeroStat icon="arrow-up" label="High" value={t(weather.maxC)} />
+            <HeroStat icon="arrow-down" label="Low" value={t(weather.minC)} />
+            <HeroStat icon="body" label="Feels" value={t(weather.feelsLikeC)} />
+          </HeroStats>
+        </HeroCard>
 
-  useEffect(() => {
-    const intervalId = setInterval(() => {
-      const cities = savedLocations.map((location) => location.city);
-      if (cities.length > 0) {
-        refreshSavedLocationWeather(cities);
-      }
-      if (weather?.city) {
-        loadByCity(weather.city, false, true);
-      }
-    }, 90000);
+        {staleAt ? (
+          <EmptyCard text={`Offline · showing weather from ${new Date(staleAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`} icon="cloud-offline-outline" />
+        ) : null}
 
-    return () => clearInterval(intervalId);
-  }, [savedLocations, weather?.city]);
-
-  const isNight = new Date().getHours() >= 19 || new Date().getHours() < 6;
-  const theme = getWeatherTheme(weather?.condition, isNight);
-  const minText = weather && Number.isFinite(weather.minC) ? `${Math.round(weather.minC)}°C` : '--';
-  const maxText = weather && Number.isFinite(weather.maxC) ? `${Math.round(weather.maxC)}°C` : '--';
-
-  return (
-    <ScreenContainer
-      title="Weather"
-      subtitle="Search by city, save favorites, and keep them auto-updated."
-      safeAreaStyle={{ backgroundColor: theme.screenBackground }}
-      contentContainerStyle={{ gap: 12 }}>
-      <View style={styles.searchRow}>
-        <TextInput
-          value={cityInput}
-          onChangeText={setCityInput}
-          placeholder="Enter city"
-          style={styles.input}
-          autoCapitalize="words"
-        />
-        <Pressable style={styles.button} onPress={() => loadByCity(cityInput)} disabled={loading}>
-          <Text style={styles.buttonText}>Search</Text>
-        </Pressable>
-      </View>
-
-      <Pressable style={styles.saveLocationButton} onPress={handleSaveCurrentCity} disabled={loading}>
-        <Text style={styles.locationButtonText}>Save This City</Text>
-      </Pressable>
-
-      <Pressable style={styles.locationButton} onPress={loadByLocation} disabled={loading}>
-        <Text style={styles.locationButtonText}>Use Device Location</Text>
-      </Pressable>
-
-      {loading ? <ActivityIndicator size="large" color="#1d4ed8" /> : null}
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      {notice ? <Text style={styles.notice}>{notice}</Text> : null}
-
-      <View style={[styles.card, { backgroundColor: theme.cardBackground }]}>
-        <Text style={styles.city}>{weather?.city ?? 'No data yet'}</Text>
-        <Text style={styles.temp}>{weather ? `${weather.temperatureC}°C` : '--'}</Text>
-        <Text style={styles.condition}>{weather?.condition ?? 'Search city or use location'}</Text>
-        <Text style={styles.minMax}>Min/Max: {minText} / {maxText}</Text>
-        <Text style={styles.minMax}>Humidity: {weather ? `${weather.humidity}%` : '--'}</Text>
-        <Text style={styles.time}>Updated: {weather?.updatedAt ?? '--'}</Text>
-      </View>
-
-      <View style={[styles.card, { backgroundColor: theme.cardBackground }]}>
-        <Text style={styles.savedTitle}>Saved Locations</Text>
-        {savedLocations.length === 0 ? (
-          <Text style={styles.time}>No saved locations yet.</Text>
-        ) : (
-          savedLocations.map((location) => (
-            <View key={location.id} style={styles.savedRow}>
-              <View style={{ flex: 1, gap: 4 }}>
-                <Pressable onPress={() => loadByCity(location.city)}>
-                  <Text style={styles.savedCity}>{location.city}</Text>
-                </Pressable>
-                <Text style={styles.savedMeta}>
-                  {savedWeatherByCity[location.city.toLowerCase()]
-                    ? `${savedWeatherByCity[location.city.toLowerCase()].temperatureC}°C • ${savedWeatherByCity[location.city.toLowerCase()].condition}`
-                    : 'Updating latest weather...'}
-                </Text>
-                <Text style={styles.time}>
-                  Latest: {savedWeatherByCity[location.city.toLowerCase()]?.updatedAt ?? '--'}
-                </Text>
-              </View>
-              <View style={styles.savedActions}>
-                <Pressable onPress={() => refreshSavedLocationWeather([location.city])}>
-                  <Text style={styles.refreshText}>Refresh</Text>
-                </Pressable>
-                <Pressable onPress={() => handleDeleteLocation(location.id)}>
-                  <Text style={styles.deleteText}>Remove</Text>
-                </Pressable>
+        {(weather.alerts ?? []).length > 0 ? (
+          (weather.alerts ?? []).map((a) => (
+            <View key={a.id} style={[styles.alert, a.severity === 'high' ? styles.alertHigh : styles.alertMedium]}>
+              <Ionicons name="warning" size={22} color={a.severity === 'high' ? Colors.error : Colors.warning} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.alertTitle}>{a.title}</Text>
+                <Text style={moduleStyles.body}>{a.message}</Text>
               </View>
             </View>
           ))
+        ) : (
+          <View style={[styles.alert, styles.alertOk]}>
+            <Ionicons name="shield-checkmark" size={22} color={Colors.success} />
+            <Text style={[moduleStyles.body, { flex: 1 }]}>No severe weather expected in the next hours.</Text>
+          </View>
         )}
-      </View>
-    </ScreenContainer>
+
+        <View style={styles.grid}>
+          <Tile icon="water-outline" label="Humidity" value={`${weather.humidity}%`} />
+          <Tile icon="speedometer-outline" label="Wind" value={weather.windSpeedKph !== undefined ? `${Math.round(weather.windSpeedKph)} km/h` : '--'} />
+          <Tile icon="sunny-outline" label="UV index" value={uv !== null ? `${uv.toFixed(1)}` : '--'} note={uvi.label} noteColor={uvi.color} />
+          <Tile icon="leaf-outline" label="Air quality" value={air.label} noteColor={air.color} />
+          <Tile icon="eye-outline" label="Visibility" value={weather.visibilityM !== undefined ? `${(weather.visibilityM / 1000).toFixed(1)} km` : '--'} />
+          <Tile icon="partly-sunny-outline" label="Sun" value={cityTime(weather.sunrise, weather.timezoneOffset, true)} note={`Sets ${cityTime(weather.sunset, weather.timezoneOffset, true)}`} />
+        </View>
+
+        <Card title="Outdoor activity" right={<Text style={[styles.advice, { color: advice.status === 'Good' ? Colors.success : advice.status === 'Fair' ? Colors.warning : Colors.error }]}>{advice.status}</Text>}>
+          <Text style={moduleStyles.body}>{advice.reason}. {advice.status === 'Good' ? 'A good time for a walk or a run.' : advice.status === 'Fair' ? 'Fine for a short walk.' : 'Better to stay indoors for now.'}</Text>
+        </Card>
+        <Text style={[moduleStyles.muted, { textAlign: 'center' }]}>Updated {weather.updatedAt}</Text>
+      </>
+    );
+  };
+
+  const renderForecast = () =>
+    !weather ? (
+      <EmptyCard text={error ?? 'No forecast yet.'} />
+    ) : (
+      <>
+        <Card title="Next hours">
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
+            {(weather.hourly ?? []).map((h, i) => (
+              <View key={`${h.dt}-${i}`} style={styles.hour}>
+                <Text style={moduleStyles.muted}>{i === 0 ? 'Now' : cityTime(h.dt, weather.timezoneOffset)}</Text>
+                <Ionicons name={weatherIcon(h.condition, isNight(weather, h.dt))} size={24} color={Colors.primary} />
+                <Text style={styles.hourTemp}>{t(h.temp)}</Text>
+                <Text style={styles.hourPop}>{h.pop !== undefined ? `${Math.round(h.pop * 100)}%` : ''}</Text>
+              </View>
+            ))}
+          </ScrollView>
+          <Text style={moduleStyles.muted}>3-hour steps · % chance of rain</Text>
+        </Card>
+        <Card title="Next days">
+          {(weather.daily ?? []).map((d, i) => (
+            <View key={`${d.date}-${i}`} style={styles.dayRow}>
+              <Text style={styles.dayName}>{dayLabel(d.date, i)}</Text>
+              <Ionicons name={weatherIcon(d.condition ?? weather.condition)} size={20} color={Colors.primary} />
+              <Text style={styles.dayPop}>{d.pop !== undefined ? `${Math.round(d.pop * 100)}%` : ''}</Text>
+              <Text style={styles.dayTemps}>
+                {t(d.temp_max)} <Text style={{ color: Colors.textSecondary }}>{t(d.temp_min)}</Text>
+              </Text>
+            </View>
+          ))}
+        </Card>
+      </>
+    );
+
+  const renderPlaces = () => (
+    <>
+      {weather ? <SecondaryButton label={`Save ${weather.city}`} icon="bookmark-outline" onPress={saveCurrent} /> : null}
+      {saved.length === 0 ? (
+        <EmptyCard text="Save places to check their weather quickly." icon="bookmarks-outline" />
+      ) : (
+        <View style={moduleStyles.list}>
+          {saved.map((row) => {
+            const w = savedWeather[row.city];
+            return (
+              <ListRow
+                key={row.id}
+                icon={weatherIcon(w?.condition)}
+                title={row.city}
+                meta={w ? `${w.condition} · H ${t(w.maxC)} L ${t(w.minC)}${w.alerts?.length ? ' · ⚠ alert' : ''}` : 'Loading...'}
+                right={w ? t(w.temperatureC) : undefined}
+                onPress={() => {
+                  setTab('today');
+                  setLoading(true);
+                  choose({ city: row.city });
+                }}
+                onLongPress={() => removeSaved(row)}
+              />
+            );
+          })}
+          <Text style={moduleStyles.muted}>Long-press a place to remove it.</Text>
+        </View>
+      )}
+    </>
+  );
+
+  return (
+    <SafeAreaView style={moduleStyles.container} edges={['top']}>
+      <ModuleHeader
+        title="Weather"
+        subtitle={weather ? `${weather.city} · ${new Date().toLocaleDateString('en-US', { weekday: 'long' })}` : 'Plan your day.'}
+        showBack={false}
+        actions={[{ icon: 'location-outline', label: 'Change place', onPress: () => setPickerOpen(true) }]}
+      />
+      <PillTabs
+        tabs={[
+          { key: 'today', label: 'Today' },
+          { key: 'forecast', label: 'Forecast' },
+          { key: 'places', label: 'Places' },
+        ]}
+        value={tab}
+        onChange={setTab}
+      />
+      {loading ? (
+        <CenterLoader />
+      ) : (
+        <ScrollView
+          contentContainerStyle={moduleStyles.content}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => {
+                if (!placeRef.current) return setRefreshing(false);
+                setRefreshing(true);
+                load(placeRef.current);
+              }}
+              tintColor={Colors.primary}
+            />
+          }
+        >
+          {error && weather && !staleAt ? <Text style={styles.error}>{error}</Text> : null}
+          {tab === 'today' ? renderToday() : tab === 'forecast' ? renderForecast() : renderPlaces()}
+        </ScrollView>
+      )}
+
+      <Modal visible={pickerOpen} transparent animationType="slide" onRequestClose={() => setPickerOpen(false)}>
+        <Pressable style={styles.backdrop} onPress={() => place && setPickerOpen(false)}>
+          <Pressable style={styles.sheet} onPress={() => {}}>
+            <Text style={styles.sheetTitle}>Weather location</Text>
+            <PrimaryButton label={locating ? 'Locating...' : 'Use my location'} icon="locate" onPress={pickGps} loading={locating} />
+            <Field label="City">
+              <Input placeholder="e.g. Lahore" value={cityInput} onChangeText={setCityInput} onSubmitEditing={pickCity} autoCapitalize="words" />
+            </Field>
+            <SecondaryButton label="Show weather" icon="search" onPress={pickCity} />
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+            {place ? (
+              <Pressable onPress={() => setPickerOpen(false)} style={{ alignSelf: 'center', padding: 6 }}>
+                <Text style={moduleStyles.link}>Cancel</Text>
+              </Pressable>
+            ) : null}
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </SafeAreaView>
   );
 }
 
-function getWeatherTheme(condition?: string, isNight?: boolean) {
-  const value = (condition || '').toLowerCase();
-
-  if (value.includes('storm') || value.includes('thunder')) {
-    return {
-      screenBackground: '#dbeafe',
-      cardBackground: '#eff6ff',
-    };
-  }
-
-  if (value.includes('rain') || value.includes('drizzle')) {
-    return {
-      screenBackground: '#dbeafe',
-      cardBackground: '#e0f2fe',
-    };
-  }
-
-  if (value.includes('snow')) {
-    return {
-      screenBackground: '#e0f2fe',
-      cardBackground: '#f0f9ff',
-    };
-  }
-
-  if (value.includes('cloud')) {
-    return {
-      screenBackground: '#e2e8f0',
-      cardBackground: '#f1f5f9',
-    };
-  }
-
-  if (isNight) {
-    return {
-      screenBackground: '#dbe4ff',
-      cardBackground: '#eef2ff',
-    };
-  }
-
-  if (value.includes('clear') || value.includes('sun')) {
-    return {
-      screenBackground: '#fef3c7',
-      cardBackground: '#fffbeb',
-    };
-  }
-
-  return {
-    screenBackground: '#f1f5f9',
-    cardBackground: '#ffffff',
-  };
+function Tile({ icon, label, value, note, noteColor }: { icon: keyof typeof Ionicons.glyphMap; label: string; value: string; note?: string; noteColor?: string }) {
+  return (
+    <View style={styles.tile}>
+      <Ionicons name={icon} size={20} color={Colors.primary} />
+      <Text style={moduleStyles.muted}>{label}</Text>
+      <Text style={[styles.tileValue, !note && noteColor ? { color: noteColor } : null]} numberOfLines={1}>
+        {value}
+      </Text>
+      {note ? <Text style={[styles.tileNote, noteColor ? { color: noteColor } : null]}>{note}</Text> : null}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-  searchRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  input: {
-    flex: 1,
-    height: 44,
+  heroIcon: { position: 'absolute', right: 16, top: 16 },
+  alert: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, borderRadius: Radius.lg, padding: 14, borderWidth: 1 },
+  alertHigh: { backgroundColor: Colors.tintRose, borderColor: '#FECDD3' },
+  alertMedium: { backgroundColor: Colors.tintAmber, borderColor: '#FDE68A' },
+  alertOk: { backgroundColor: Colors.tintGreen, borderColor: '#A7F3D0', alignItems: 'center' },
+  alertTitle: { fontFamily: Font.extrabold, fontSize: 15, color: Colors.textPrimary },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  tile: {
+    width: '31%',
+    flexGrow: 1,
+    backgroundColor: Colors.surfaceLight,
+    borderRadius: Radius.lg,
     borderWidth: 1,
-    borderColor: '#d1d9e6',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    backgroundColor: '#ffffff',
+    borderColor: Colors.borderSoft,
+    padding: 12,
+    gap: 2,
+    ...Shadows.card,
   },
-  button: {
-    backgroundColor: '#1d4ed8',
-    borderRadius: 10,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-  },
-  buttonText: {
-    color: '#ffffff',
-    fontWeight: '700',
-  },
-  locationButton: {
-    borderWidth: 1,
-    borderColor: '#1d4ed8',
-    borderRadius: 10,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#eff6ff',
-  },
-  locationButtonText: {
-    color: '#1d4ed8',
-    fontWeight: '700',
-  },
-  saveLocationButton: {
-    borderWidth: 1,
-    borderColor: '#0f766e',
-    borderRadius: 10,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#ccfbf1',
-  },
-  card: {
-    padding: 14,
-    borderRadius: 14,
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#dbe3ef',
-    gap: 6,
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
-  },
-  city: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-  temp: {
-    fontSize: 36,
-    fontWeight: '800',
-    color: '#0f172a',
-  },
-  condition: {
-    fontSize: 16,
-    color: '#334155',
-  },
-  minMax: {
-    fontSize: 14,
-    color: '#334155',
-    fontWeight: '600',
-  },
-  time: {
-    fontSize: 12,
-    color: '#64748b',
-  },
-  error: {
-    color: '#dc2626',
-    fontWeight: '600',
-  },
-  notice: {
-    color: '#065f46',
-    fontWeight: '600',
-    backgroundColor: '#d1fae5',
-    borderWidth: 1,
-    borderColor: '#6ee7b7',
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-  },
-  savedTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-  savedRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
-    paddingVertical: 8,
-  },
-  savedCity: {
-    fontSize: 14,
-    color: '#1e293b',
-    fontWeight: '600',
-  },
-  deleteText: {
-    color: '#b91c1c',
-    fontWeight: '600',
-  },
-  savedActions: {
-    alignItems: 'flex-end',
-    justifyContent: 'center',
+  tileValue: { fontFamily: Font.extrabold, fontSize: 16, color: Colors.textPrimary },
+  tileNote: { fontFamily: Font.semibold, fontSize: 12, color: Colors.textSecondary },
+  advice: { fontFamily: Font.extrabold, fontSize: 16 },
+  hour: { alignItems: 'center', gap: 6, backgroundColor: Colors.primarySurface, borderRadius: Radius.md, paddingVertical: 10, paddingHorizontal: 12, minWidth: 64 },
+  hourTemp: { fontFamily: Font.extrabold, fontSize: 15, color: Colors.textPrimary },
+  hourPop: { fontFamily: Font.semibold, fontSize: 11, color: Colors.accentTeal },
+  dayRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 },
+  dayName: { flex: 1, fontFamily: Font.bold, fontSize: 15, color: Colors.textPrimary },
+  dayPop: { width: 40, fontFamily: Font.semibold, fontSize: 12, color: Colors.accentTeal, textAlign: 'right' },
+  dayTemps: { width: 92, textAlign: 'right', fontFamily: Font.extrabold, fontSize: 15, color: Colors.textPrimary },
+  error: { fontFamily: Font.semibold, fontSize: 14, color: Colors.error },
+  backdrop: { flex: 1, backgroundColor: 'rgba(15,23,42,0.45)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: Colors.surfaceLight,
+    borderTopLeftRadius: Radius.xl,
+    borderTopRightRadius: Radius.xl,
+    padding: 20,
+    paddingBottom: 36,
     gap: 12,
-    marginLeft: 10,
   },
-  refreshText: {
-    color: '#1d4ed8',
-    fontWeight: '600',
-  },
-  savedMeta: {
-    fontSize: 12,
-    color: '#334155',
-    fontWeight: '600',
-  },
+  sheetTitle: { fontFamily: Font.extrabold, fontSize: 20, color: Colors.textPrimary },
 });

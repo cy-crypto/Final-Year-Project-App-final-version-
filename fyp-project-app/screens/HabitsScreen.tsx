@@ -1,248 +1,239 @@
-import React, { useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  FlatList,
-  Pressable,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
-import { Picker } from '@react-native-picker/picker';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAppContext } from '../context/AppContext';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
 
-type HabitFrequency = 'Daily' | 'Weekly';
+import { useAppContext } from '../context/AppContext';
+import { Colors, Font, Radius } from '../constants/theme';
+import type { RootStackParamList } from '../navigation/types';
+import { HABIT_CATEGORIES, getHabits, type HabitCategory, type HabitDto } from '../services/habitService';
+import { HabitCard } from '../components/habits/HabitCard';
+import { HabitInsightsTab } from '../components/habits/HabitInsightsTab';
+import {
+  CenterLoader,
+  ChipRow,
+  EmptyCard,
+  Fab,
+  HeroCard,
+  HeroStat,
+  HeroStats,
+  ModuleHeader,
+  PillTabs,
+  ProgressBar,
+  SectionHeader,
+  moduleStyles,
+} from '../components/module/ModuleUI';
+import { CATEGORY_META, HABIT_SUGGESTIONS, isDue } from '../utils/habitFormat';
+
+type Nav = NativeStackNavigationProp<RootStackParamList>;
+type TabKey = 'today' | 'all' | 'insights';
 
 export function HabitsScreen() {
-  const { habits, habitsLoading, habitsError, fetchHabits, addHabit, completeHabit } = useAppContext();
-  const [name, setName] = useState('');
-  const [frequency, setFrequency] = useState<HabitFrequency>('Daily');
-  const [localError, setLocalError] = useState<string | null>(null);
+  const navigation = useNavigation<Nav>();
+  const { habits, habitsLoading, habitsError, fetchHabits, completeHabit, saveHabit, deleteHabit } = useAppContext();
+  const [tab, setTab] = useState<TabKey>('today');
+  const [category, setCategory] = useState<'All' | HabitCategory | 'Archived'>('All');
+  const [archived, setArchived] = useState<HabitDto[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [loadedOnce, setLoadedOnce] = useState(false);
 
-  useEffect(() => {
-    fetchHabits();
+  useEffect(
+    () => navigation.addListener('focus', () => fetchHabits(true).finally(() => setLoadedOnce(true))),
+    [navigation, fetchHabits]
+  );
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    setReloadKey((k) => k + 1);
+    await fetchHabits(true);
+    setRefreshing(false);
   }, [fetchHabits]);
 
-  const handleAddHabit = async () => {
-    setLocalError(null);
-    const trimmed = name.trim();
-    if (!trimmed) {
-      setLocalError('Habit name is required.');
-      return;
-    }
-
-    const ok = await addHabit({ name: trimmed, frequency });
-    if (!ok) {
-      setLocalError('Unable to add habit. Please try again.');
-      return;
-    }
-
-    setName('');
-    setFrequency('Daily');
+  const showCategory = async (key: 'All' | HabitCategory | 'Archived') => {
+    setCategory(key);
+    if (key === 'Archived') getHabits(true).then(setArchived).catch(() => setArchived([]));
   };
 
-  const markCompleted = async (id: string) => {
-    await completeHabit(id);
-  };
+  const toDo = habits.filter(isDue);
+  const doneToday = habits.filter((h) => h.doneToday);
+  const weeklyMet = habits.filter((h) => !h.doneToday && !isDue(h));
+  const daily = habits.filter((h) => h.frequency === 'Daily');
+  const dailyDone = daily.filter((h) => h.doneToday).length;
+  const bestRunning = habits.reduce((m, h) => Math.max(m, h.streakCount), 0);
+  const avgRate = habits.length ? Math.round(habits.reduce((s, h) => s + h.rate30d, 0) / habits.length) : 0;
+
+  const filtered = useMemo(
+    () => (category === 'Archived' ? archived : category === 'All' ? habits : habits.filter((h) => h.category === category)),
+    [habits, archived, category]
+  );
+
+  const open = (h: HabitDto) => navigation.navigate('HabitDetail', { habitId: h.id });
+
+  const actions = (h: HabitDto) =>
+    Alert.alert(h.name, undefined, [
+      { text: 'Edit', onPress: () => navigation.navigate('AddHabit', { habitId: h.id }) },
+      {
+        text: h.isArchived ? 'Restore' : 'Archive',
+        onPress: async () => {
+          await saveHabit(h.id, { is_archived: !h.isArchived });
+          if (h.isArchived) setArchived((prev) => prev.filter((a) => a.id !== h.id));
+        },
+      },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () =>
+          Alert.alert('Delete habit', `Delete "${h.name}" and all its history?`, [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Delete', style: 'destructive', onPress: () => deleteHabit(h.id) },
+          ]),
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+
+  const list = (items: HabitDto[]) => (
+    <View style={moduleStyles.list}>
+      {items.map((h) => (
+        <HabitCard
+          key={h.id}
+          habit={h}
+          onPress={() => open(h)}
+          onToggle={() => (h.isArchived ? open(h) : completeHabit(h.id))}
+          onLongPress={() => actions(h)}
+        />
+      ))}
+    </View>
+  );
+
+  const suggestions = (
+    <View style={{ gap: 10 }}>
+      <SectionHeader title="Ideas to start with" />
+      <View style={styles.suggestions}>
+        {HABIT_SUGGESTIONS.slice(0, 6).map((s) => {
+          const meta = CATEGORY_META[s.category];
+          return (
+            <Pressable key={s.name} style={styles.suggestion} onPress={() => navigation.navigate('AddHabit', { preset: s.name })}>
+              <Ionicons name={meta.icon} size={16} color={meta.color} />
+              <Text style={styles.suggestionText} numberOfLines={1}>
+                {s.name}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+
+  const renderToday = () =>
+    habits.length === 0 ? (
+      <>
+        <EmptyCard text={habitsError ?? 'No habits yet. Small daily steps add up — add your first one.'} icon="flame-outline" />
+        {suggestions}
+      </>
+    ) : (
+      <>
+        <HeroCard
+          label={`${new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' })} · Habits`}
+          value={toDo.length === 0 ? 'All done for today' : `${doneToday.length} of ${doneToday.length + toDo.length} done`}
+        >
+          <View style={{ marginTop: 6 }}>
+            <ProgressBar pct={daily.length ? (dailyDone / daily.length) * 100 : toDo.length ? 0 : 100} color={Colors.white} />
+          </View>
+          <HeroStats>
+            <HeroStat icon="flame" label="Best running" value={`${bestRunning} days`} />
+            <HeroStat icon="trending-up" label="30-day average" value={`${avgRate}%`} />
+          </HeroStats>
+        </HeroCard>
+
+        <SectionHeader title={toDo.length ? 'To do' : 'To do · nothing left'} />
+        {toDo.length ? list(toDo) : <EmptyCard text="Every habit is checked. Great work!" icon="checkmark-done-outline" />}
+
+        {doneToday.length > 0 ? (
+          <>
+            <SectionHeader title="Done today" />
+            {list(doneToday)}
+          </>
+        ) : null}
+
+        {weeklyMet.length > 0 ? (
+          <>
+            <SectionHeader title="Weekly goal reached" />
+            {list(weeklyMet)}
+          </>
+        ) : null}
+        <Text style={[moduleStyles.muted, { textAlign: 'center' }]}>Tap ✓ to check in · tap a habit for its history · long-press for options</Text>
+      </>
+    );
+
+  const renderAll = () => (
+    <>
+      <ChipRow
+        options={[
+          { key: 'All' as const, label: 'All' },
+          ...HABIT_CATEGORIES.filter((c) => habits.some((h) => h.category === c)).map((c) => ({ key: c, label: c })),
+          { key: 'Archived' as const, label: 'Archived' },
+        ]}
+        value={category}
+        onChange={showCategory}
+        scroll
+      />
+      {filtered.length === 0 ? (
+        <EmptyCard text={category === 'Archived' ? 'No archived habits.' : 'No habits here yet.'} icon="albums-outline" />
+      ) : (
+        list(filtered)
+      )}
+      {category !== 'Archived' ? suggestions : null}
+    </>
+  );
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Habits</Text>
-        <Text style={styles.subtitle}>Track habits synced with backend streak logic.</Text>
-      </View>
-
-      <View style={styles.formCard}>
-        <Text style={styles.label}>Habit Name</Text>
-        <TextInput
-          value={name}
-          onChangeText={setName}
-          placeholder="e.g. Read 20 minutes"
-          style={styles.input}
-        />
-
-        <Text style={styles.label}>Frequency</Text>
-        <View style={styles.pickerWrap}>
-          <Picker selectedValue={frequency} onValueChange={(v) => setFrequency(v)}>
-            <Picker.Item label="Daily" value="Daily" />
-            <Picker.Item label="Weekly" value="Weekly" />
-          </Picker>
-        </View>
-
-        <Pressable style={styles.addButton} onPress={handleAddHabit} disabled={habitsLoading}>
-          <Text style={styles.addButtonText}>Add Habit</Text>
-        </Pressable>
-
-        {localError || habitsError ? <Text style={styles.errorText}>{localError ?? habitsError}</Text> : null}
-      </View>
-
-      <FlatList
-        data={habits}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        refreshControl={<RefreshControl refreshing={habitsLoading} onRefresh={fetchHabits} />}
-        ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-        ListEmptyComponent={<Text style={styles.emptyText}>No habits yet. Add one above.</Text>}
-        renderItem={({ item }) => {
-          const today = getTodayDateString();
-          const completedToday = item.lastCompletedDate === today;
-          return (
-            <View style={styles.habitCard}>
-              <Text style={styles.habitName}>{item.name}</Text>
-              <Text style={styles.meta}>Frequency: {item.frequency}</Text>
-              <Text style={styles.meta}>Current Streak: {item.streakCount}</Text>
-              <Text style={styles.meta}>
-                Last Completed: {item.lastCompletedDate ?? 'Not completed yet'}
-              </Text>
-
-              <Pressable
-                style={[styles.completeButton, completedToday && styles.completeButtonDisabled]}
-                onPress={() => markCompleted(item.id)}
-                disabled={completedToday}>
-                <Text style={styles.completeButtonText}>
-                  {completedToday ? 'Completed Today' : 'Mark as Completed'}
-                </Text>
-              </Pressable>
-            </View>
-          );
-        }}
+    <SafeAreaView style={moduleStyles.container} edges={['top']}>
+      <ModuleHeader
+        title="Habits"
+        subtitle="Small steps, every day."
+        showBack={false}
+        actions={[{ icon: 'add-circle-outline', label: 'Add habit', onPress: () => navigation.navigate('AddHabit') }]}
       />
-
-      {habitsLoading && habits.length > 0 ? (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="small" color="#1d4ed8" />
-        </View>
-      ) : null}
+      <PillTabs
+        tabs={[
+          { key: 'today', label: 'Today' },
+          { key: 'all', label: 'All habits' },
+          { key: 'insights', label: 'Insights' },
+        ]}
+        value={tab}
+        onChange={setTab}
+      />
+      {!loadedOnce && habitsLoading && habits.length === 0 ? (
+        <CenterLoader />
+      ) : (
+        <ScrollView
+          contentContainerStyle={moduleStyles.content}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
+        >
+          {tab === 'today' ? renderToday() : tab === 'all' ? renderAll() : <HabitInsightsTab habits={habits} reloadKey={reloadKey} />}
+        </ScrollView>
+      )}
+      {tab !== 'insights' ? <Fab onPress={() => navigation.navigate('AddHabit')} label="Add habit" aboveAssistant /> : null}
     </SafeAreaView>
   );
 }
 
-function getTodayDateString() {
-  return formatDate(new Date());
-}
-
-function formatDate(date: Date) {
-  return date.toISOString().split('T')[0];
-}
-
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#eef2f7',
-  },
-  header: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 8,
-    gap: 4,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#475569',
-    paddingHorizontal: 16,
-  },
-  formCard: {
-    marginHorizontal: 16,
-    backgroundColor: '#ffffff',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#dbe3ef',
-    padding: 12,
-    gap: 8,
-  },
-  label: {
-    color: '#334155',
-    fontWeight: '600',
-    fontSize: 13,
-  },
-  input: {
-    height: 42,
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 8,
-    backgroundColor: '#ffffff',
-    paddingHorizontal: 10,
-  },
-  pickerWrap: {
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 8,
-    backgroundColor: '#ffffff',
-  },
-  addButton: {
-    backgroundColor: '#1d4ed8',
-    borderRadius: 8,
-    height: 42,
+  suggestions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  suggestion: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 4,
-  },
-  addButtonText: {
-    color: '#ffffff',
-    fontWeight: '700',
-  },
-  errorText: {
-    color: '#b91c1c',
-    fontWeight: '600',
-    marginTop: 4,
-  },
-  listContent: {
-    padding: 16,
-    paddingBottom: 32,
-  },
-  emptyText: {
-    textAlign: 'center',
-    color: '#64748b',
-    marginTop: 14,
-  },
-  habitCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#dbe3ef',
-    padding: 12,
     gap: 6,
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
+    paddingHorizontal: 12,
+    height: 38,
+    maxWidth: '100%',
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    borderColor: Colors.borderLight,
+    backgroundColor: Colors.surfaceLight,
   },
-  habitName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-  meta: {
-    fontSize: 13,
-    color: '#475569',
-  },
-  completeButton: {
-    alignSelf: 'flex-start',
-    marginTop: 4,
-    backgroundColor: '#16a34a',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  completeButtonDisabled: {
-    backgroundColor: '#86efac',
-  },
-  completeButtonText: {
-    color: '#ffffff',
-    fontWeight: '700',
-    fontSize: 12,
-  },
-  loadingOverlay: {
-    position: 'absolute',
-    right: 18,
-    top: 14,
-  },
+  suggestionText: { fontFamily: Font.semibold, fontSize: 13, color: Colors.textPrimary },
 });
