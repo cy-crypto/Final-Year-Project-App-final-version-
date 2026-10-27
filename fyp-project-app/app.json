@@ -4,12 +4,16 @@
     "slug": "fyp-project-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/icon.png",
     "scheme": "fypprojectapp",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSSpeechRecognitionUsageDescription": "Allow this app to convert your speech to text for voice commands.",
+        "NSMicrophoneUsageDescription": "Allow this app to use the microphone for voice commands.",
+        "NSMotionUsageDescription": "This app uses motion data to count your daily steps."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -18,8 +22,14 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACTIVITY_RECOGNITION"
+      ],
+      "package": "com.personalcompanion.fypprojectapp"
     },
     "web": {
       "output": "static",
@@ -51,11 +61,30 @@
           }
         }
       ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#ffffff"
+        }
+      ],
       "@react-native-community/datetimepicker",
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-audio",
+      "expo-sharing"
     ],
     "experiments": {
       "reactCompiler": true
+    },
+    "extra": {
+      "googleClientIdWeb": "",
+      "googleClientIdIos": "",
+      "googleClientIdAndroid": "",
+      "googleClientIdExpo": "",
+      "apiBaseUrl": "http://127.0.0.1:8000/api",
+      "eas": {
+        "projectId": "0ee5d83f-ce94-4580-ac79-9b9416be3a2c"
+      }
     }
   }
 }

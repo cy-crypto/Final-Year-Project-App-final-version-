@@ -1,0 +1,4 @@
+.tools/
+**/.npm-cache/
+fyp-backend/env
+fyp-project-app/env.download
