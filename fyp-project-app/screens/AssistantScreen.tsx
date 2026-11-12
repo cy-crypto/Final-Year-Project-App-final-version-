@@ -12,7 +12,9 @@ import {
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { ModuleHeader } from '../components/module/ModuleUI';
+import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
+import type { RootStackParamList } from '../navigation/types';
 import {
   AudioQuality,
   IOSOutputFormat,
@@ -71,6 +73,7 @@ function toSpeakable(text: string) {
 
 export function AssistantScreen() {
   const navigation = useNavigation();
+  const route = useRoute<RouteProp<RootStackParamList, 'Assistant'>>();
   const { fetchTasks, fetchHabits } = useAppContext();
   const recorder = useAudioRecorder(VOICE_RECORDING);
   const [messages, setMessages] = useState<ListItem[]>([]);
@@ -239,18 +242,21 @@ export function AssistantScreen() {
     [recorder, send]
   );
 
+  // Opened by long-pressing the assistant bot: start listening right away (once).
+  const autoMicDone = useRef(false);
+  useEffect(() => {
+    if (route.params?.autoMic && !autoMicDone.current) {
+      autoMicDone.current = true;
+      startRecording();
+    }
+  }, [route.params?.autoMic, startRecording]);
+
   const busy = sending || transcribing;
   const canSend = !busy && !recording && input.trim().length > 0;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      <View style={styles.header}>
-        <Pressable onPress={() => navigation.goBack()} hitSlop={12} style={styles.back}>
-          <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
-        </Pressable>
-        <Text style={styles.title}>Assistant</Text>
-        <View style={styles.back} />
-      </View>
+      <ModuleHeader title="Assistant" subtitle="Ask in English, Urdu or Punjabi." />
 
       <KeyboardAvoidingView
         style={styles.flex}
@@ -368,15 +374,6 @@ export function AssistantScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bgLight },
   flex: { flex: 1 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  back: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 18, fontWeight: '800', color: Colors.textPrimary },
   list: { padding: 16, paddingBottom: 8, flexGrow: 1 },
   empty: { alignItems: 'center', paddingTop: 32, gap: 10 },
   emptyIcon: {

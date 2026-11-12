@@ -1,3 +1,4 @@
+import { useFieldChain } from '../hooks/useFieldChain';
 import React, { useEffect, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -64,12 +65,15 @@ export function AddMedicationScreen() {
   const { params } = useRoute<Route>();
   const editingId = params?.medicationId ?? null;
 
+  const field = useFieldChain(5, () => handleSave());
+
   const [loading, setLoading] = useState(Boolean(editingId));
   const [name, setName] = useState('');
   const [dosage, setDosage] = useState('');
   const [frequency, setFrequency] = useState<Frequency>('daily');
   const [times, setTimes] = useState<string[]>(DEFAULT_TIMES.daily);
   const [days, setDays] = useState<number[]>([new Date().getDay() === 0 ? 6 : new Date().getDay() - 1]);
+  // Course dates and doctor are no longer shown, but existing values are kept when editing.
   const [startDate, setStartDate] = useState<Date | null>(null);
   const [endDate, setEndDate] = useState<Date | null>(null);
   const [doseUnits, setDoseUnits] = useState('1');
@@ -140,10 +144,6 @@ export function AddMedicationScreen() {
     }
     if (frequency === 'weekly' && days.length === 0) {
       setError('Pick at least one day of the week.');
-      return;
-    }
-    if (startDate && endDate && endDate < startDate) {
-      setError('The end date is before the start date.');
       return;
     }
     const units = toInt(doseUnits);
@@ -217,12 +217,12 @@ export function AddMedicationScreen() {
       <FormHeader title={editingId ? 'Edit Medicine' : 'Add Medicine'} />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={moduleStyles.formContent} keyboardShouldPersistTaps="handled">
-          <FormCard>
+          <FormCard style={styles.card}>
             <Field label="Medicine name">
-              <Input placeholder="e.g. Panadol" value={name} onChangeText={setName} />
+              <Input {...field(0)} style={styles.input} placeholder="e.g. Panadol" value={name} onChangeText={setName} />
             </Field>
             <Field label="Dosage">
-              <Input placeholder="e.g. 500 mg, 1 tablet" value={dosage} onChangeText={setDosage} />
+              <Input {...field(1)} style={styles.input} placeholder="e.g. 500 mg, 1 tablet" value={dosage} onChangeText={setDosage} />
             </Field>
             <Field label="How often">
               <ChipRow options={FREQUENCIES} value={frequency} onChange={changeFrequency} />
@@ -272,45 +272,33 @@ export function AddMedicationScreen() {
             )}
           </FormCard>
 
-          <FormCard>
-            <Field label="Course start (optional)">
-              <DateTimeInput value={startDate} mode="date" onChange={setStartDate} onClear={() => setStartDate(null)} placeholder="Starts today" />
-            </Field>
-            <Field label="Course end (optional)">
-              <DateTimeInput value={endDate} mode="date" onChange={setEndDate} onClear={() => setEndDate(null)} placeholder="No end date" />
-            </Field>
-          </FormCard>
-
-          <FormCard>
+          <FormCard style={styles.card}>
             <View style={moduleStyles.grid}>
               <View style={{ flex: 1 }}>
                 <Field label="Units per dose">
-                  <Input keyboardType="number-pad" value={doseUnits} onChangeText={setDoseUnits} />
+                  <Input {...field(2)} style={styles.input} keyboardType="number-pad" value={doseUnits} onChangeText={setDoseUnits} />
                 </Field>
               </View>
               <View style={{ flex: 1 }}>
                 <Field label="In stock">
-                  <Input keyboardType="number-pad" value={supply} onChangeText={setSupply} />
+                  <Input {...field(3)} style={styles.input} keyboardType="number-pad" value={supply} onChangeText={setSupply} />
                 </Field>
               </View>
               <View style={{ flex: 1 }}>
                 <Field label="Refill at">
-                  <Input keyboardType="number-pad" value={threshold} onChangeText={setThreshold} />
+                  <Input {...field(4)} style={styles.input} keyboardType="number-pad" value={threshold} onChangeText={setThreshold} />
                 </Field>
               </View>
             </View>
             <Text style={moduleStyles.muted}>Taking a dose lowers the stock. You get a refill alert when it reaches the refill level.</Text>
           </FormCard>
 
-          <FormCard>
-            <Field label="Doctor (optional)">
-              <Input placeholder="e.g. Dr. Ayesha Khan" value={doctor} onChangeText={setDoctor} />
-            </Field>
-            <Field label="Doctor's instructions (optional)">
-              <Input placeholder="e.g. After meals, with water" multiline value={instructions} onChangeText={setInstructions} />
+          <FormCard style={styles.card}>
+            <Field label="Instructions (optional)">
+              <Input style={styles.input} placeholder="e.g. After meals, with water" multiline value={instructions} onChangeText={setInstructions} />
             </Field>
             <Field label="Health notes (optional)">
-              <Input placeholder="Allergies, side effects, test results..." multiline value={notes} onChangeText={setNotes} />
+              <Input style={styles.input} placeholder="Allergies, side effects, test results..." multiline value={notes} onChangeText={setNotes} />
             </Field>
             {editingId ? (
               <ToggleRow title="Active" meta="Paused medicines get no reminders" value={active} onValueChange={setActive} />
@@ -329,6 +317,8 @@ export function AddMedicationScreen() {
 }
 
 const styles = StyleSheet.create({
+  card: { padding: 12, gap: 10 },
+  input: { minHeight: 38, fontSize: 14 },
   days: { flexDirection: 'row', gap: 6 },
   day: {
     flex: 1,

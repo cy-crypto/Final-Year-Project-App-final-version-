@@ -1,5 +1,6 @@
+import { getQuickPosition } from '../utils/quickLocation';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View, RefreshControl, useWindowDimensions } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View, RefreshControl } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList, MainTabParamList } from '../navigation/types';
@@ -11,7 +12,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppContext } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { Colors, Font, Radius, Shadows } from '../constants/theme';
-import { fetchWeatherByCity } from '../services/weatherService';
+import * as Location from 'expo-location';
+import { fetchWeather, fetchWeatherByCity, formatTemperature } from '../services/weatherService';
 import { api, parseJsonData } from '../services/api';
 import { DashboardBudgetCard } from '../components/DashboardBudgetCard';
 import { getToday as getFitnessToday } from '../services/fitnessService';
@@ -31,11 +33,7 @@ function cityFromTimezone(timezone?: string): PrayerPlace | null {
   return city ? { city, label: city } : null;
 }
 
-const SECTION_GAP = 16;        // gap between sections (contentContainer gap)
-const GRID_GAP = 12;           // gap between the two rows of tiles (statGrid rowGap)
-const FOLD_MARGIN = 4;        // keeps the tiles just inside the screen, so Budget starts just outside it
-const MIN_THOUGHT_HEIGHT = 44;
-const FULL_THOUGHT_HEIGHT = 200;   // room for the longest verse (2-line Arabic + 3-line translation)
+const THOUGHT_HEIGHT = 64;   // fixed height of the compact verse card (fits 2 lines)
 
 const DAILY_THOUGHTS = [
   { arabic: 'رَبِّ زِدْنِي عِلْمًا', translation: 'My Lord, increase me in knowledge.', ref: 'Quran 20:114' },
@@ -44,6 +42,14 @@ const DAILY_THOUGHTS = [
   { arabic: 'فَاذْكُرُونِي أَذْكُرْكُمْ', translation: 'So remember Me; I will remember you.', ref: 'Quran 2:152' },
   { arabic: 'وَمَن يَتَوَكَّلْ عَلَى اللَّهِ فَهُوَ حَسْبُهُ', translation: 'Whoever relies upon Allah, He is sufficient for him.', ref: 'Quran 65:3' },
 ];
+
+const PRAYER_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
+  Fajr: 'cloudy-night',
+  Dhuhr: 'sunny',
+  Asr: 'partly-sunny',
+  Maghrib: 'moon',
+  Isha: 'star',
+};
 
 const PLACEHOLDER_PRAYERS: PrayerTimes = {
   Fajr: '--:--',
@@ -83,8 +89,9 @@ interface NextEvent {
 
 export function HomeScreen() {
   const navigation = useNavigation<HomeScreenNavigationProp>();
-  const { tasks, habits, weather, setWeather, toggleTask, completeHabit } = useAppContext();
+  const { tasks, habits, weather, setWeather, toggleTask } = useAppContext();
   const { user } = useAuth();
+  const tempUnit = user?.preferences?.temperature_unit ?? 'C';
   const insets = useSafeAreaInsets();
   const weatherFetchRef = useRef<{ city: string; at: number } | null>(null);
   
@@ -96,10 +103,8 @@ export function HomeScreen() {
   const [hijriDate, setHijriDate] = useState<DateInfo | null>(null);
   const [medications, setMedications] = useState<Medication[]>([]);
   const [stepsToday, setStepsToday] = useState<number | null>(null);
-  // Visible scroll height and the height of greeting + next-up card + tiles (see the top element below).
+  // Visible height of the scroll area (depends only on the device, never on loaded data).
   const [viewportHeight, setViewportHeight] = useState(0);
-  const [headHeight, setHeadHeight] = useState(0); // greeting + next-up card
-  const { width: windowWidth } = useWindowDimensions();
   const [nextEvent, setNextEvent] = useState<NextEvent | null>(null);
   
   const today = new Date().toISOString().split('T')[0];
@@ -118,7 +123,7 @@ export function HomeScreen() {
   // Fetch prayer times and hijri date
   useEffect(() => {
     fetchPrayerData();
-  }, [user?.selectedCity, user?.timezone]);
+  }, [user?.selectedCity, user?.timezone, user?.preferences?.prayer_school]);
   
   // Fetch medications
   useEffect(() => {
@@ -135,34 +140,52 @@ export function HomeScreen() {
     calculateNextEvent();
   }, [currentTime, prayerTimes, medications, tasks, habits]);
 
-  // Weather fetching (unchanged but integrated into new design)
+  // Weather: uses the device's current location when allowed, else the profile city, else London.
   useEffect(() => {
-    const selectedCity = user?.selectedCity?.trim() || 'London';
-    if (!selectedCity) {
-      return;
-    }
+    const fallbackCity = user?.selectedCity?.trim() || 'London';
 
-    const cityKey = selectedCity.toLowerCase();
     const lastFetch = weatherFetchRef.current;
-    if (lastFetch && lastFetch.city === cityKey && Date.now() - lastFetch.at < 10 * 60 * 1000) {
+    if (lastFetch && lastFetch.city === fallbackCity.toLowerCase() && Date.now() - lastFetch.at < 10 * 60 * 1000) {
       return;
     }
 
     let cancelled = false;
     (async () => {
+      // Current location (same approach as the Weather screen); null if denied or unavailable.
+      let place: { city?: string; lat?: number; lon?: number } | null = null;
       try {
-        const snapshot = await fetchWeatherByCity(selectedCity);
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const pos = await getQuickPosition();
+          let city: string | undefined;
+          try {
+            const [geo] = await Location.reverseGeocodeAsync(pos.coords);
+            city = geo?.city || geo?.subregion || undefined;
+          } catch {
+            city = undefined;
+          }
+          place = { city, lat: pos.coords.latitude, lon: pos.coords.longitude };
+        }
+      } catch {
+        place = null;
+      }
+      if (cancelled) {
+        return;
+      }
+
+      try {
+        const snapshot = place ? await fetchWeather(place) : await fetchWeatherByCity(fallbackCity);
         if (cancelled) {
           return;
         }
 
         setWeather({
-          city: snapshot.city || selectedCity,
+          city: snapshot.city || place?.city || fallbackCity,
           temperatureC: snapshot.temperatureC,
           condition: snapshot.condition,
           updatedAt: snapshot.updatedAt,
         });
-        weatherFetchRef.current = { city: cityKey, at: Date.now() };
+        weatherFetchRef.current = { city: fallbackCity.toLowerCase(), at: Date.now() };
       } catch (error) {
         console.warn('Failed to fetch weather for dashboard', error);
       }
@@ -300,14 +323,6 @@ export function HomeScreen() {
     return 'Good night';
   };
   
-  const getMoodLine = () => {
-    const hour = currentTime.getHours();
-    if (hour < 12) return 'a fresh start.';
-    if (hour < 17) return 'a steady pace.';
-    if (hour < 21) return 'time to wind down.';
-    return 'rest awaits.';
-  };
-  
   const getWeatherMood = () => {
     if (!weather) return '';
     const temp = weather.temperatureC;
@@ -326,7 +341,7 @@ export function HomeScreen() {
     const temp = weather.temperatureC;
     
     if (temp > 38) {
-      return `It's ${temp}° outside — your water habit matters more today.`;
+      return `It's ${formatTemperature(temp, tempUnit, false)} outside — your water habit matters more today.`;
     }
     
     const overdueHabits = habits.filter(h => h.lastCompletedDate !== today);
@@ -339,37 +354,6 @@ export function HomeScreen() {
     }
     
     return 'Gentle day — take it moment by moment.';
-  };
-  
-  const getPrayerStatus = (prayerName: string, prayerTime: string) => {
-    const [hours, minutes] = prayerTime.split(':').map(Number);
-    const prayerDateTime = new Date();
-    prayerDateTime.setHours(hours, minutes, 0, 0);
-    
-    const now = currentTime;
-    const isPast = prayerDateTime < now;
-    const isNext = nextEvent?.type === 'prayer' && nextEvent.name === prayerName;
-    
-    return { isPast, isNext };
-  };
-  
-  const getTasksLeadSentence = () => {
-    const count = todaysTasks.length;
-    if (count === 0) return 'Nothing due today. Breathe.';
-    if (count === 1) return 'One thing on your plate today — take your time.';
-    if (count <= 4) return `${count} things on your plate today — take your time.`;
-    return `${count} things today — pick one to start.`;
-  };
-  
-  const getTasksDueThisWeek = () => {
-    const weekFromNow = new Date();
-    weekFromNow.setDate(weekFromNow.getDate() + 7);
-    
-    return tasks.filter(task => {
-      if (!task.deadline || task.done) return false;
-      const deadline = new Date(task.deadline);
-      return deadline > new Date(today) && deadline <= weekFromNow;
-    }).length;
   };
   
   const getNextMedication = (): Medication | null => {
@@ -406,10 +390,6 @@ export function HomeScreen() {
     setRefreshing(false);
   }, []);
   
-  const handleHabitToggle = async (habitId: string) => {
-    await completeHabit(habitId);
-  };
-  
   const handleTaskToggle = (taskId: string) => {
     toggleTask(taskId);
   };
@@ -435,7 +415,6 @@ export function HomeScreen() {
   
   const firstName = user?.fullName?.split(' ')[0] || 'there';
   const nextMed = getNextMedication();
-  const tasksDueThisWeek = getTasksDueThisWeek();
 
   const initials = (user?.fullName || firstName)
     .split(' ')
@@ -491,35 +470,80 @@ export function HomeScreen() {
     },
   ];
 
-  // Vertical budget of the first screen: the verse card above the greeting takes whatever is left after the
-  // greeting, the next-up card and the four tiles, so the tiles stay fully visible and the Budget card starts
-  // just below the bottom edge (no sliver of it, no blank gap). If the next-up card grows (weather, medication
-  // lines) and the verse would lose its room, the tiles give back a little height (at most 20%) instead.
+  // The verse card has a fixed height, so it looks the same from the first frame and never resizes
+  // while weather, prayer and medication data load below it.
   const topPadding = insets.top + 16;
-  const tileWidth = (windowWidth - 32) * 0.485;
-  const squareGridHeight = tileWidth * 2 + GRID_GAP;
-  const spare =
-    viewportHeight > 0 && headHeight > 0
-      ? viewportHeight - topPadding - headHeight - SECTION_GAP * 2 - FOLD_MARGIN - squareGridHeight
-      : 0;
-  const maxTileShrink = tileWidth * 2 * 0.2;
-  let topHeight = 0;
-  let tileHeight = tileWidth;
-  if (spare >= MIN_THOUGHT_HEIGHT) {
-    topHeight = Math.floor(spare);
-  } else if (spare + maxTileShrink >= MIN_THOUGHT_HEIGHT) {
-    const shrink = MIN_THOUGHT_HEIGHT - spare;
-    topHeight = MIN_THOUGHT_HEIGHT;
-    tileHeight = tileWidth - shrink / 2;
-  } else if (spare !== 0) {
-    // Not even a strip fits: no verse, but still keep the four tiles fully on screen (small phones).
-    const overflow = Math.max(0, -(spare + SECTION_GAP));
-    tileHeight = tileWidth - Math.min(overflow, maxTileShrink) / 2;
-  }
-  const showThought = topHeight >= MIN_THOUGHT_HEIGHT;
-  const fullThought = topHeight >= FULL_THOUGHT_HEIGHT;
+  // The first screen (verse, greeting, next-up card, 4 tiles) is exactly one screen tall: the tiles
+  // take whatever height is left, so all four are fully visible without scrolling. Budget and the
+  // sections below start just under the fold.
+  const firstScreenHeight = viewportHeight > 0 ? viewportHeight - topPadding - THOUGHT_HEIGHT - 16 - 4 : undefined;
   const dayOfYear = Math.floor((currentTime.getTime() - new Date(currentTime.getFullYear(), 0, 0).getTime()) / 86400000);
   const thought = DAILY_THOUGHTS[dayOfYear % DAILY_THOUGHTS.length];
+
+  // ---- Today's rhythm: prayers are the anchors; medication doses and timed tasks slot in between ----
+  type RhythmItem = {
+    key: string;
+    kind: 'prayer' | 'medication' | 'task';
+    minutes: number | null;
+    title: string;
+    detail?: string;
+    timeLabel: string;
+    onPress?: () => void;
+  };
+  const toMinutes = (value: string) => {
+    const [h, m] = value.split(':').map(Number);
+    return h * 60 + (m || 0);
+  };
+  const minutesToDate = (minutes: number) => {
+    const d = new Date();
+    d.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
+    return d;
+  };
+  const nowMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
+
+  const rhythmItems: RhythmItem[] = [];
+  Object.entries(prayerTimes ?? PLACEHOLDER_PRAYERS).forEach(([name, time]) => {
+    const minutes = prayerTimes ? toMinutes(time) : null;
+    rhythmItems.push({
+      key: `prayer-${name}`,
+      kind: 'prayer',
+      minutes,
+      title: name,
+      timeLabel: minutes === null ? time : formatTime(minutesToDate(minutes)),
+      onPress: () => navigation.navigate('PrayerTime'),
+    });
+  });
+  if (prayerTimes) {
+    medications.filter((med) => med.is_active).forEach((med) => {
+      med.schedule_times.forEach((t) => {
+        const minutes = toMinutes(t);
+        rhythmItems.push({
+          key: `med-${med.id}-${t}`,
+          kind: 'medication',
+          minutes,
+          title: med.name,
+          detail: med.dosage,
+          timeLabel: formatTime(minutesToDate(minutes)),
+          onPress: () => navigation.navigate('Medication'),
+        });
+      });
+    });
+    todaysTasks.filter((task) => task.reminder_time).forEach((task) => {
+      const minutes = toMinutes(task.reminder_time as string);
+      rhythmItems.push({
+        key: `task-${task.id}`,
+        kind: 'task',
+        minutes,
+        title: task.title,
+        detail: task.category || 'Task',
+        timeLabel: formatTime(minutesToDate(minutes)),
+        onPress: () => handleTaskToggle(task.id),
+      });
+    });
+    rhythmItems.sort((x, y) => (x.minutes ?? 0) - (y.minutes ?? 0));
+  }
+  const nextRhythmKey = rhythmItems.find((item) => item.minutes !== null && item.minutes > nowMinutes)?.key;
+  const anytimeTasks = todaysTasks.filter((task) => !task.reminder_time);
 
   return (
     <ScrollView
@@ -530,39 +554,24 @@ export function HomeScreen() {
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />
       }
     >
-      {/* Thought for today (fills the space left above the greeting) */}
-      {showThought && (
-        <View style={[styles.thoughtCard, { height: topHeight }]}>
-          {fullThought ? (
-            <>
-              <Text style={styles.thoughtEyebrow}>THOUGHT FOR TODAY</Text>
-              <Text style={styles.thoughtArabic} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.6}>
-                {thought.arabic}
-              </Text>
-              <Text style={styles.thoughtTranslation} numberOfLines={3} adjustsFontSizeToFit minimumFontScale={0.8}>
-                {thought.translation}
-              </Text>
-              <Text style={styles.thoughtRef}>{thought.ref}</Text>
-            </>
-          ) : (
-            <Text style={styles.thoughtCompact} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.75}>
-              {thought.translation} <Text style={styles.thoughtRef}>· {thought.ref}</Text>
-            </Text>
-          )}
-        </View>
-      )}
+      {/* Thought for today (fixed size) */}
+      <View style={[styles.thoughtCard, { height: THOUGHT_HEIGHT }]}>
+        <Text style={styles.thoughtCompact} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.75}>
+          {thought.translation} <Text style={styles.thoughtRef}>· {thought.ref}</Text>
+        </Text>
+      </View>
 
-      {/* Greeting + next-up card are measured so the verse card above can use the space that is left */}
+      <View style={[styles.aboveFold, { height: firstScreenHeight }]}>
       <View style={styles.aboveFold}>
-      <View style={styles.aboveFold} onLayout={(e) => setHeadHeight(e.nativeEvent.layout.height)}>
       {/* Greeting Row */}
       <View style={styles.greetingRow}>
         <View style={styles.greetingText}>
           <Text style={styles.dateMeta}>
             {formatDate(currentTime)} {hijriDate && `· ${hijriDate.hijri.day} ${hijriDate.hijri.month.en}`}
           </Text>
-          <Text style={styles.greetingLine}>{getGreeting()}, {firstName} 👋</Text>
-          <Text style={styles.greetingLabel}>{getMoodLine()}</Text>
+          <Text style={styles.greetingLine}>{getGreeting()}, {firstName}</Text>
+          {/* Empty line kept on purpose so the card keeps its original height */}
+          <Text style={styles.greetingLabel}>{' '}</Text>
         </View>
         <Pressable style={styles.avatar} onPress={() => navigation.navigate('Profile')}>
           {user?.avatarUrl ? (
@@ -586,10 +595,6 @@ export function HomeScreen() {
       >
         <View style={styles.heroTopRow}>
           <View style={styles.heroMain}>
-            <View style={styles.rightNowBadge}>
-              <View style={styles.pulseDot} />
-              <Text style={styles.rightNowLabel}>RIGHT NOW · NEXT UP</Text>
-            </View>
             {nextEvent ? (
               <>
                 <Text style={styles.rightNowHeadline}>
@@ -608,7 +613,7 @@ export function HomeScreen() {
             <View style={styles.weatherChipRow}>
               <Ionicons name="partly-sunny" size={18} color={Colors.accentTeal} />
               <Text style={styles.weatherPill}>
-                {weather ? formatTemp(weather.temperatureC, '°') : '--'}
+                {weather ? formatTemperature(weather.temperatureC, tempUnit, false) : '--'}
               </Text>
             </View>
             <Text style={styles.weatherCity} numberOfLines={1}>{weather?.city ?? ''}</Text>
@@ -626,20 +631,24 @@ export function HomeScreen() {
 
       {/* 2x2 Tinted Summary Grid */}
       <View style={styles.statGrid}>
-        {statTiles.map((tile) => (
-          <Pressable
-            key={tile.key}
-            style={({ pressed }) => [styles.statTile, { backgroundColor: tile.tint, height: tileHeight }, pressed && styles.pressed]}
-            onPress={tile.onPress}
-          >
-            <View style={[styles.statIcon, { backgroundColor: tile.solid }]}>
-              <Ionicons name={tile.icon} size={26} color={Colors.white} />
-            </View>
-            <View style={styles.statText}>
-              <Text style={styles.statLabel}>{tile.label}</Text>
-              <Text style={styles.statValue} numberOfLines={1}>{tile.value}</Text>
-            </View>
-          </Pressable>
+        {[statTiles.slice(0, 2), statTiles.slice(2)].map((row, rowIndex) => (
+          <View key={rowIndex} style={styles.statRow}>
+            {row.map((tile) => (
+              <Pressable
+                key={tile.key}
+                style={({ pressed }) => [styles.statTile, { backgroundColor: tile.tint }, pressed && styles.pressed]}
+                onPress={tile.onPress}
+              >
+                <View style={[styles.statIcon, { backgroundColor: tile.solid }]}>
+                  <Ionicons name={tile.icon} size={26} color={Colors.white} />
+                </View>
+                <View style={styles.statText}>
+                  <Text style={styles.statLabel}>{tile.label}</Text>
+                  <Text style={styles.statValue} numberOfLines={1}>{tile.value}</Text>
+                </View>
+              </Pressable>
+            ))}
+          </View>
         ))}
       </View>
 
@@ -647,176 +656,6 @@ export function HomeScreen() {
 
       {/* Budget summary */}
       <DashboardBudgetCard reloadKey={budgetReloadKey} />
-
-      {/* Today's Rhythm Card */}
-      <View style={styles.rhythmCard}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Today's rhythm</Text>
-          <Pressable onPress={() => navigation.navigate('PrayerTime')}>
-            <Text style={styles.sectionLink}>Prayer times →</Text>
-          </Pressable>
-        </View>
-        <View style={styles.prayerTimeline}>
-          {Object.entries(prayerTimes ?? PLACEHOLDER_PRAYERS).map(([name, time], index, all) => {
-            const { isPast, isNext } = prayerTimes
-              ? getPrayerStatus(name, time)
-              : { isPast: false, isNext: false };
-            return (
-              <View key={name} style={styles.prayerPoint}>
-                <View style={[
-                  styles.prayerDot,
-                  isPast && styles.prayerDotPast,
-                  isNext && styles.prayerDotNext
-                ]} />
-                <Text style={[
-                  styles.prayerName,
-                  isPast && styles.prayerNamePast,
-                  isNext && styles.prayerNameNext
-                ]}>
-                  {name.toUpperCase()}
-                </Text>
-                <Text style={[
-                  styles.prayerTime,
-                  isPast && styles.prayerTimePast,
-                  isNext && styles.prayerTimeNext
-                ]}>
-                  {time}
-                </Text>
-                {index < all.length - 1 && (
-                  <View style={styles.prayerLine} />
-                )}
-              </View>
-            );
-          })}
-        </View>
-        <View style={styles.contextualNoteRow}>
-          <View style={styles.noteIcon}>
-            <Ionicons name="water" size={16} color={Colors.accentTeal} />
-          </View>
-          <Text style={styles.contextualNote}>{getContextualNote()}</Text>
-        </View>
-      </View>
-
-      {/* Habits Card */}
-      <View style={styles.habitsCard}>
-        <View style={styles.habitsHeader}>
-          <Text style={styles.habitsTitle}>
-            {habits.length} small thing{habits.length !== 1 ? 's' : ''}
-          </Text>
-          <View style={styles.countBadge}>
-            <Text style={styles.habitsCount}>
-              {completedHabitsToday} of {habits.length}
-            </Text>
-          </View>
-        </View>
-        <Text style={styles.habitsSubtitle}>Tap to mark done. No pressure.</Text>
-        <View style={styles.habitTiles}>
-          {habits.slice(0, 4).map((habit) => {
-            const isCompleted = habit.lastCompletedDate === today;
-            return (
-              <Pressable
-                key={habit.id}
-                style={[
-                  styles.habitTile,
-                  isCompleted && styles.habitTileCompleted
-                ]}
-                onPress={() => handleHabitToggle(habit.id)}
-              >
-                <View style={[
-                  styles.habitIcon,
-                  isCompleted && styles.habitIconCompleted
-                ]}>
-                  <Ionicons
-                    name="checkmark"
-                    size={16}
-                    color={isCompleted ? Colors.primary : Colors.white}
-                  />
-                </View>
-                <Text style={[
-                  styles.habitName,
-                  isCompleted && styles.habitNameCompleted
-                ]}>
-                  {habit.name}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
-
-      {/* Tasks Card */}
-      <View style={styles.tasksCard}>
-        <Text style={styles.tasksLead}>{getTasksLeadSentence()}</Text>
-        {todaysTasks.slice(0, 3).map((task) => (
-          <Pressable
-            key={task.id}
-            style={styles.taskRow}
-            onPress={() => handleTaskToggle(task.id)}
-          >
-            <View style={[
-              styles.taskBullet,
-              task.done && styles.taskBulletCompleted
-            ]}>
-              {task.done && (
-                <Ionicons name="checkmark" size={12} color={Colors.white} />
-              )}
-            </View>
-            <Text style={[
-              styles.taskTitle,
-              task.done && styles.taskTitleCompleted
-            ]}>
-              {task.title}
-            </Text>
-            {task.category && (
-              <Text style={styles.taskCategory}>{task.category}</Text>
-            )}
-          </Pressable>
-        ))}
-        {tasksDueThisWeek > 0 && (
-          <Pressable onPress={() => navigation.navigate('Tasks')}>
-            <Text style={styles.tasksFooter}>
-              {tasksDueThisWeek} more this week →
-            </Text>
-          </Pressable>
-        )}
-      </View>
-
-      {/* Medication Card */}
-      <View style={styles.medicationCard}>
-        {nextMed ? (
-          <>
-            <Text style={styles.medicationLabel}>
-              MEDICATION · NEXT DOSE
-            </Text>
-            <View style={styles.medicationRow}>
-              <View style={styles.medicationIcon}>
-                <Ionicons name="medkit" size={22} color={Colors.white} />
-              </View>
-              <View style={styles.medicationInfo}>
-                <Text style={styles.medicationName}>{nextMed!.name}</Text>
-                <Text style={styles.medicationDosage}>{nextMed!.dosage}</Text>
-              </View>
-              <Text style={styles.medicationTime}>
-                {nextMed!.schedule_times[0]} · in {(() => {
-                  const [hours, minutes] = nextMed!.schedule_times[0].split(':').map(Number);
-                  const medTime = new Date();
-                  medTime.setHours(hours, minutes, 0, 0);
-                  return getTimeUntil(medTime);
-                })()}
-              </Text>
-            </View>
-          </>
-        ) : (
-          <>
-            <Text style={styles.medicationLabel}>
-              MEDICATION · ALL CLEAR FOR TODAY ✓
-            </Text>
-            <Text style={styles.medicationAllClear}>
-              No more medications scheduled for today
-            </Text>
-          </>
-        )}
-      </View>
 
       {/* Assistant */}
       <Pressable
@@ -842,8 +681,114 @@ export function HomeScreen() {
         </View>
       </Pressable>
 
-      {/* Sign-off line */}
-      <Text style={styles.signOff}>That's the day. Be gentle.</Text>
+      {/* Today's rhythm: the whole day on one timeline, anchored on the five prayers */}
+      <View style={styles.rhythmCard}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Today's rhythm</Text>
+        </View>
+
+        <View>
+          {rhythmItems.map((item, index) => {
+            const isFirst = index === 0;
+            const isLast = index === rhythmItems.length - 1;
+            const isPrayer = item.kind === 'prayer';
+            const isNext = item.key === nextRhythmKey;
+            const past = item.minutes !== null && item.minutes <= nowMinutes;
+            const nodeIcon: keyof typeof Ionicons.glyphMap = isPrayer
+              ? (PRAYER_ICONS[item.title] ?? 'time')
+              : item.kind === 'medication'
+                ? 'medkit'
+                : 'checkmark';
+            return (
+              <Pressable
+                key={item.key}
+                style={[styles.rhythmRow, isNext && styles.rhythmRowNext]}
+                onPress={item.onPress}
+                disabled={!item.onPress}
+              >
+                <View style={styles.rhythmRail}>
+                  <View
+                    style={[
+                      styles.rhythmLine,
+                      isFirst && { top: 20 },
+                      isLast && { bottom: undefined, height: 20 },
+                    ]}
+                  />
+                  <View
+                    style={[
+                      styles.rhythmNode,
+                      isPrayer ? styles.rhythmNodePrayer : styles.rhythmNodeSmall,
+                      item.kind === 'medication' && styles.rhythmNodeMed,
+                      item.kind === 'task' && styles.rhythmNodeTask,
+                      past && styles.rhythmNodePast,
+                      isNext && styles.rhythmNodeNext,
+                    ]}
+                  >
+                    <Ionicons
+                      name={nodeIcon}
+                      size={isPrayer ? 16 : 12}
+                      color={isNext || (!past && isPrayer) ? Colors.white : isPrayer ? Colors.textHint : Colors.white}
+                    />
+                  </View>
+                </View>
+
+                <View style={[styles.rhythmBody, past && styles.rhythmBodyPast]}>
+                  <View style={styles.rhythmTextCol}>
+                    <Text style={isPrayer ? styles.rhythmPrayerName : styles.rhythmEventName} numberOfLines={1}>
+                      {item.title}
+                    </Text>
+                    {isNext ? (
+                      <Text style={styles.rhythmNextTag}>Up next · in {getTimeUntil(minutesToDate(item.minutes ?? 0))}</Text>
+                    ) : item.detail ? (
+                      <Text style={styles.rhythmDetail} numberOfLines={1}>{item.detail}</Text>
+                    ) : null}
+                  </View>
+                  <Text style={isPrayer ? styles.rhythmPrayerTime : styles.rhythmEventTime}>{item.timeLabel}</Text>
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {/* Tasks due today without a set time */}
+        {anytimeTasks.length > 0 && (
+          <View style={styles.anytimeBlock}>
+            <Text style={styles.anytimeLabel}>ANYTIME TODAY</Text>
+            {anytimeTasks.slice(0, 3).map((task) => (
+              <Pressable key={task.id} style={styles.anytimeRow} onPress={() => handleTaskToggle(task.id)}>
+                <View style={styles.anytimeBullet} />
+                <Text style={styles.anytimeTitle} numberOfLines={1}>{task.title}</Text>
+              </Pressable>
+            ))}
+            {anytimeTasks.length > 3 && (
+              <Pressable onPress={() => navigation.navigate('Tasks')}>
+                <Text style={styles.sectionLink}>{anytimeTasks.length - 3} more →</Text>
+              </Pressable>
+            )}
+          </View>
+        )}
+
+        {/* Habits progress */}
+        {habits.length > 0 && (
+          <Pressable style={styles.habitSummary} onPress={() => navigation.navigate('Habits')}>
+            <View style={styles.noteIcon}>
+              <Ionicons name="checkmark-done" size={16} color={Colors.success} />
+            </View>
+            <Text style={styles.habitSummaryText}>
+              Habits · {completedHabitsToday} of {habits.length} done today
+            </Text>
+            <Ionicons name="chevron-forward" size={16} color={Colors.textHint} />
+          </Pressable>
+        )}
+
+        <View style={styles.contextualNoteRow}>
+          <View style={styles.noteIcon}>
+            <Ionicons name="water" size={16} color={Colors.accentTeal} />
+          </View>
+          <Text style={styles.contextualNote}>{getContextualNote()}</Text>
+        </View>
+      </View>
+
     </ScrollView>
   );
 }
@@ -966,28 +911,6 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 6,
   },
-  rightNowBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: 6,
-    backgroundColor: Colors.tintOrange,
-    borderRadius: Radius.pill,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  pulseDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: Colors.primary,
-  },
-  rightNowLabel: {
-    color: Colors.primary,
-    fontSize: 12,
-    fontFamily: Font.extrabold,
-    letterSpacing: 0.6,
-  },
   rightNowHeadline: {
     fontSize: 24,
     fontFamily: Font.extrabold,
@@ -1092,29 +1015,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     ...Shadows.card,
   },
-  thoughtEyebrow: {
-    fontSize: 12,
-    fontFamily: Font.extrabold,
-    color: 'rgba(255,255,255,0.85)',
-    letterSpacing: 1.2,
-  },
-  thoughtArabic: {
-    fontSize: 30,
-    lineHeight: 46,
-    fontWeight: '700',
-    color: Colors.white,
-    textAlign: 'center',
-    writingDirection: 'rtl',
-    marginTop: 4,
-  },
-  thoughtTranslation: {
-    fontSize: 15,
-    lineHeight: 21,
-    fontFamily: Font.semibold,
-    color: Colors.white,
-    textAlign: 'center',
-    marginTop: 2,
-  },
   thoughtRef: {
     fontSize: 12,
     fontFamily: Font.bold,
@@ -1129,13 +1029,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   statGrid: {
+    flex: 1,
+    gap: 12,
+  },
+  statRow: {
+    flex: 1,
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    rowGap: 12,
+    gap: 12,
   },
   statTile: {
-    width: '48.5%',
+    flex: 1,
+    minHeight: 112,
     justifyContent: 'space-between',
     borderRadius: Radius.lg,
     padding: 16,
@@ -1188,77 +1092,6 @@ const styles = StyleSheet.create({
     gap: 16,
     ...Shadows.card,
   },
-  prayerTimeline: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-  },
-  prayerPoint: {
-    alignItems: 'center',
-    gap: 4,
-    position: 'relative',
-  },
-  prayerDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: Colors.surfaceLight,
-    borderWidth: 2,
-    borderColor: Colors.borderLight,
-  },
-  prayerDotPast: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
-  },
-  prayerDotNext: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: Colors.surfaceLight,
-    borderWidth: 3,
-    borderColor: Colors.primary,
-    shadowColor: Colors.primary,
-    shadowOpacity: 0.4,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
-  },
-  prayerName: {
-    fontSize: 11,
-    fontFamily: Font.bold,
-    textTransform: 'uppercase' as const,
-    color: Colors.textHint,
-    letterSpacing: 0.5,
-  },
-  prayerNamePast: {
-    color: Colors.textSecondary,
-  },
-  prayerNameNext: {
-    color: Colors.primary,
-    fontFamily: Font.extrabold,
-  },
-  prayerTime: {
-    fontSize: 13,
-    fontFamily: Font.semibold,
-    color: Colors.textHint,
-  },
-  prayerTimePast: {
-    color: Colors.textSecondary,
-  },
-  prayerTimeNext: {
-    color: Colors.primary,
-    fontFamily: Font.extrabold,
-  },
-  prayerLine: {
-    position: 'absolute',
-    top: 5,
-    left: '50%',
-    right: '-50%',
-    height: 2,
-    backgroundColor: Colors.borderSoft,
-    zIndex: -1,
-  },
   contextualNoteRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1282,200 +1115,90 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  // Habits Card
-  habitsCard: {
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSoft,
-    padding: 16,
-    gap: 10,
-    ...Shadows.card,
-  },
-  habitsHeader: {
+  // Rhythm timeline
+  rhythmRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  habitsTitle: {
-    fontSize: 20,
-    fontFamily: Font.extrabold,
-    color: Colors.textPrimary,
-    letterSpacing: -0.3,
-  },
-  countBadge: {
-    backgroundColor: Colors.tintAmber,
-    borderRadius: Radius.pill,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  habitsCount: {
-    fontSize: 14,
-    fontFamily: Font.extrabold,
-    color: Colors.accentAmber,
-  },
-  habitsSubtitle: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    fontFamily: Font.medium,
-  },
-  habitTiles: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  habitTile: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.tintSlate,
+    alignItems: 'stretch',
     borderRadius: Radius.md,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    gap: 8,
+    paddingRight: 8,
   },
-  habitTileCompleted: {
-    backgroundColor: Colors.primary,
+  rhythmRowNext: {
+    backgroundColor: Colors.tintOrange,
   },
-  habitIcon: {
-    width: 22,
-    height: 22,
-    borderRadius: 7,
+  rhythmRail: {
+    width: 40,
+    alignItems: 'center',
+  },
+  rhythmLine: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 2,
     backgroundColor: Colors.borderLight,
+  },
+  rhythmNode: {
+    marginTop: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  habitIconCompleted: {
-    backgroundColor: Colors.white,
+  rhythmNodePrayer: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.accentAmber,
   },
-  habitName: {
-    fontSize: 14,
-    fontFamily: Font.bold,
-    color: Colors.textPrimary,
-  },
-  habitNameCompleted: {
-    color: Colors.white,
-  },
-
-  // Tasks Card
-  tasksCard: {
-    backgroundColor: Colors.surfaceLight,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.borderSoft,
-    padding: 16,
-    gap: 6,
-    ...Shadows.card,
-  },
-  tasksLead: {
-    fontSize: 20,
-    fontFamily: Font.extrabold,
-    color: Colors.textPrimary,
-    lineHeight: 28,
-    letterSpacing: -0.3,
-    marginBottom: 4,
-  },
-  taskRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    backgroundColor: Colors.bgLight,
-    borderRadius: Radius.md,
-  },
-  taskBullet: {
+  rhythmNodeSmall: {
     width: 20,
     height: 20,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: 10,
+    marginTop: 12,
   },
-  taskBulletCompleted: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
-  },
-  taskTitle: {
+  rhythmNodeMed: { backgroundColor: Colors.accentBlue },
+  rhythmNodeTask: { backgroundColor: Colors.success },
+  rhythmNodePast: { backgroundColor: Colors.borderLight },
+  rhythmNodeNext: { backgroundColor: Colors.primary },
+  rhythmBody: {
     flex: 1,
-    fontSize: 16,
-    fontFamily: Font.semibold,
-    color: Colors.textPrimary,
-  },
-  taskTitleCompleted: {
-    color: Colors.textHint,
-    textDecorationLine: 'line-through',
-  },
-  taskCategory: {
-    fontSize: 12,
-    fontFamily: Font.extrabold,
-    color: Colors.primary,
-    textTransform: 'uppercase' as const,
-    backgroundColor: Colors.tintOrange,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    overflow: 'hidden',
-  },
-  tasksFooter: {
-    fontSize: 15,
-    fontFamily: Font.bold,
-    color: Colors.primary,
-    textAlign: 'center',
-    marginTop: 6,
-  },
-
-  // Medication Card
-  medicationCard: {
-    backgroundColor: Colors.tintRose,
-    borderRadius: Radius.lg,
-    padding: 16,
-    gap: 12,
-  },
-  medicationLabel: {
-    fontSize: 12,
-    fontFamily: Font.extrabold,
-    color: Colors.accentRose,
-    letterSpacing: 0.6,
-  },
-  medicationRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    justifyContent: 'space-between',
+    gap: 10,
+    paddingVertical: 10,
   },
-  medicationIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: Colors.accentRose,
+  rhythmBodyPast: { opacity: 0.55 },
+  rhythmTextCol: { flex: 1, gap: 2 },
+  rhythmPrayerName: { fontSize: 17, fontFamily: Font.extrabold, color: Colors.textPrimary },
+  rhythmPrayerTime: { fontSize: 16, fontFamily: Font.bold, color: Colors.textPrimary },
+  rhythmEventName: { fontSize: 15, fontFamily: Font.semibold, color: Colors.textPrimary },
+  rhythmEventTime: { fontSize: 14, fontFamily: Font.semibold, color: Colors.textSecondary },
+  rhythmDetail: { fontSize: 13, fontFamily: Font.medium, color: Colors.textSecondary },
+  rhythmNextTag: { fontSize: 13, fontFamily: Font.bold, color: Colors.primary },
+  anytimeBlock: { gap: 8 },
+  anytimeLabel: { fontSize: 12, fontFamily: Font.extrabold, color: Colors.textSecondary, letterSpacing: 1 },
+  anytimeRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 },
+  anytimeBullet: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    borderColor: Colors.borderLight,
+  },
+  anytimeTitle: { flex: 1, fontSize: 15, fontFamily: Font.semibold, color: Colors.textPrimary },
+  habitSummary: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: Colors.tintGreen,
+    borderRadius: Radius.md,
+    padding: 10,
   },
-  medicationInfo: {
-    flex: 1,
-  },
-  medicationName: {
-    fontSize: 17,
-    fontFamily: Font.extrabold,
-    color: Colors.textPrimary,
-  },
-  medicationDosage: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    marginTop: 2,
-    fontFamily: Font.medium,
-  },
-  medicationTime: {
-    fontSize: 14,
-    fontFamily: Font.extrabold,
-    color: Colors.accentRose,
-    textAlign: 'right',
-  },
-  medicationAllClear: {
-    fontSize: 15,
-    color: Colors.textSecondary,
-    fontFamily: Font.medium,
-  },
+  habitSummaryText: { flex: 1, fontSize: 14, fontFamily: Font.bold, color: Colors.textPrimary },
+
+  // Habits Card
+
+  // Tasks Card
+
+  // Medication Card
 
   // Progress bar (shared)
   progressTrack: {
@@ -1491,11 +1214,4 @@ const styles = StyleSheet.create({
   },
 
   // Sign-off
-  signOff: {
-    fontSize: 14,
-    color: Colors.textHint,
-    textAlign: 'center',
-    fontFamily: Font.medium,
-    marginTop: 8,
-  },
 });

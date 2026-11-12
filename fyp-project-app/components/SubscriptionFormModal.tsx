@@ -1,3 +1,4 @@
+import { useFieldChain } from '../hooks/useFieldChain';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -42,6 +43,7 @@ const FREQUENCIES: SubscriptionFrequency[] = ['weekly', 'monthly', 'yearly'];
 const CATEGORY_CHIPS = DEFAULT_CATEGORIES.filter((c) => c !== 'Other');
 
 export function SubscriptionFormModal({ visible, currency, editing, onClose, onSaved }: Props) {
+  const field = useFieldChain(3, () => handleSave());
   const [name, setName] = useState('');
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('');
@@ -75,6 +77,10 @@ export function SubscriptionFormModal({ visible, currency, editing, onClose, onS
       setError('Amount must be greater than 0.');
       return;
     }
+    if (!category.trim()) {
+      setError('Please choose or enter a category.');
+      return;
+    }
 
     setSaving(true);
     setError(null);
@@ -82,7 +88,7 @@ export function SubscriptionFormModal({ visible, currency, editing, onClose, onS
       const payload = {
         name: trimmed,
         amount: String(value),
-        category: category.trim() || null,
+        category: category.trim(),
         frequency,
         nextDueDate: dueDate,
         isActive,
@@ -126,7 +132,7 @@ export function SubscriptionFormModal({ visible, currency, editing, onClose, onS
 
           <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <Text style={styles.label}>Name</Text>
-            <TextInput
+            <TextInput {...field(0)}
               style={styles.input}
               placeholder="e.g. Netflix, Rent, Gym"
               placeholderTextColor={Colors.textHint}
@@ -135,7 +141,7 @@ export function SubscriptionFormModal({ visible, currency, editing, onClose, onS
             />
 
             <Text style={[styles.label, styles.gap]}>Amount ({currency})</Text>
-            <TextInput
+            <TextInput {...field(1)}
               style={styles.input}
               placeholder="e.g. 1500"
               placeholderTextColor={Colors.textHint}
@@ -174,7 +180,7 @@ export function SubscriptionFormModal({ visible, currency, editing, onClose, onS
               />
             )}
 
-            <Text style={[styles.label, styles.gap]}>Category (used when you mark it paid)</Text>
+            <Text style={[styles.label, styles.gap]}>Category * (used when you mark it paid)</Text>
             <View style={styles.chips}>
               {CATEGORY_CHIPS.map((c) => {
                 const active = category.trim().toLowerCase() === c.toLowerCase();
@@ -185,6 +191,13 @@ export function SubscriptionFormModal({ visible, currency, editing, onClose, onS
                 );
               })}
             </View>
+            <TextInput {...field(2)}
+              style={[styles.input, { marginTop: 10 }]}
+              placeholder="Or type your own category"
+              placeholderTextColor={Colors.textHint}
+              value={category}
+              onChangeText={setCategory}
+            />
 
             <View style={styles.reminder}>
               <Ionicons name="notifications" size={18} color={Colors.primary} />

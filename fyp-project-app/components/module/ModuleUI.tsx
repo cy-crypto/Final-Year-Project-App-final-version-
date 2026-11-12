@@ -24,7 +24,7 @@ export type IconName = keyof typeof Ionicons.glyphMap;
 
 /* ------------------------------------------------------------------ header */
 
-type HeaderAction = { icon: IconName; onPress: () => void; label: string; badge?: boolean };
+type HeaderAction = { icon: IconName; onPress: () => void; label: string; badge?: boolean; primary?: boolean };
 
 export function ModuleHeader({
   title,
@@ -38,6 +38,8 @@ export function ModuleHeader({
   showBack?: boolean;
 }) {
   const navigation = useNavigation();
+  // Module pages (tabs and drawer pages) get the assistant shortcut in their header.
+  const isModulePage = navigation.getState()?.type === 'tab';
   return (
     <View style={s.header}>
       {showBack && navigation.canGoBack() ? (
@@ -46,21 +48,40 @@ export function ModuleHeader({
         </Pressable>
       ) : null}
       <View style={{ flex: 1 }}>
-        <Text style={s.title} numberOfLines={1}>
+        <Text style={s.title} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
           {title}
         </Text>
-        {subtitle ? (
-          <Text style={s.subtitle} numberOfLines={1}>
-            {subtitle}
-          </Text>
-        ) : null}
       </View>
-      {actions.map((a) => (
-        <Pressable key={a.label} style={s.iconBtn} onPress={a.onPress} hitSlop={8} accessibilityLabel={a.label}>
-          <Ionicons name={a.icon} size={24} color={Colors.textPrimary} />
-          {a.badge ? <View style={s.badgeDot} /> : null}
+      {isModulePage ? (
+        <Pressable
+          style={({ pressed }) => [s.primaryAction, pressed && { opacity: 0.85 }]}
+          onPress={() => navigation.navigate('Assistant' as never)}
+          onLongPress={() => (navigation as any).navigate('Assistant', { autoMic: true })}
+          delayLongPress={350}
+          hitSlop={8}
+          accessibilityLabel="Open assistant"
+        >
+          <Ionicons name="happy" size={24} color={Colors.white} />
         </Pressable>
-      ))}
+      ) : null}
+      {actions.map((a) =>
+        a.primary ? (
+          <Pressable
+            key={a.label}
+            style={({ pressed }) => [s.primaryAction, pressed && { opacity: 0.85 }]}
+            onPress={a.onPress}
+            hitSlop={8}
+            accessibilityLabel={a.label}
+          >
+            <Ionicons name={a.icon} size={26} color={Colors.white} />
+          </Pressable>
+        ) : (
+          <Pressable key={a.label} style={s.iconBtn} onPress={a.onPress} hitSlop={8} accessibilityLabel={a.label}>
+            <Ionicons name={a.icon} size={24} color={Colors.textPrimary} />
+            {a.badge ? <View style={s.badgeDot} /> : null}
+          </Pressable>
+        )
+      )}
     </View>
   );
 }
@@ -131,9 +152,9 @@ export function HeroStats({ children }: { children: React.ReactNode }) {
   return <View style={s.heroRow}>{children}</View>;
 }
 
-export function HeroStat({ icon, label, value }: { icon: IconName; label: string; value: string }) {
+export function HeroStat({ icon, label, value, onPress }: { icon: IconName; label: string; value: string; onPress?: () => void }) {
   return (
-    <View style={s.heroStat}>
+    <Pressable style={({ pressed }) => [s.heroStat, pressed && { opacity: 0.85 }]} onPress={onPress} disabled={!onPress}>
       <View style={s.heroIcon}>
         <Ionicons name={icon} size={16} color={Colors.primary} />
       </View>
@@ -141,11 +162,12 @@ export function HeroStat({ icon, label, value }: { icon: IconName; label: string
         <Text style={s.heroStatLabel} numberOfLines={1}>
           {label}
         </Text>
-        <Text style={s.heroStatValue} numberOfLines={1}>
+        <Text style={s.heroStatValue} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
           {value}
         </Text>
       </View>
-    </View>
+      {onPress ? <Ionicons name="chevron-forward" size={16} color={Colors.textHint} /> : null}
+    </Pressable>
   );
 }
 
@@ -297,21 +319,26 @@ export function ProgressBar({ pct, color = Colors.primary }: { pct: number; colo
   );
 }
 
-export function StatTile({ label, value, tint = Colors.primarySurface, color = Colors.primary }: {
+export function StatTile({ label, value, tint = Colors.primarySurface, color = Colors.primary, onPress }: {
   label: string;
   value: string;
   tint?: string;
   color?: string;
+  onPress?: () => void;
 }) {
   return (
-    <View style={[s.statTile, { backgroundColor: tint }]}>
+    <Pressable
+      style={({ pressed }) => [s.statTile, { backgroundColor: tint }, pressed && { opacity: 0.75 }]}
+      onPress={onPress}
+      disabled={!onPress}
+    >
       <Text style={[s.statValue, { color }]} numberOfLines={1}>
         {value}
       </Text>
       <Text style={s.statLabel} numberOfLines={1}>
         {label}
       </Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -402,9 +429,10 @@ export function Field({ label, children, hint }: { label: string; children: Reac
   );
 }
 
-export function Input({ multiline, style, ...props }: TextInputProps) {
+export function Input({ multiline, style, ref, ...props }: TextInputProps & { ref?: React.ComponentProps<typeof TextInput>['ref'] }) {
   return (
     <TextInput
+      ref={ref}
       placeholderTextColor="#9CA3AF"
       multiline={multiline}
       style={[s.formInput, multiline && s.formTextarea, style]}
@@ -588,6 +616,16 @@ const s = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   header: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 12 },
   iconBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  primaryAction: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    marginLeft: 6,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Shadows.button,
+  },
   badgeDot: {
     position: 'absolute',
     top: 10,
@@ -632,22 +670,22 @@ const s = StyleSheet.create({
   tabText: { fontFamily: Font.semibold, fontSize: 14, color: Colors.textSecondary },
   tabTextActive: { color: Colors.white, fontFamily: Font.bold },
 
-  hero: { backgroundColor: Colors.primary, borderRadius: Radius.xl, padding: 16, gap: 4, ...Shadows.button },
-  heroLabel: { fontFamily: Font.semibold, fontSize: 14, color: 'rgba(255,255,255,0.9)' },
-  heroValue: { fontFamily: Font.extrabold, fontSize: 30, color: Colors.white, letterSpacing: -0.6 },
-  heroRow: { flexDirection: 'row', gap: 10, marginTop: 8 },
+  hero: { backgroundColor: Colors.heroOrange, borderRadius: Radius.xl, padding: 18, gap: 6, ...Shadows.button },
+  heroLabel: { fontFamily: Font.semibold, fontSize: 15, color: 'rgba(255,255,255,0.95)' },
+  heroValue: { fontFamily: Font.extrabold, fontSize: 32, color: Colors.white, letterSpacing: -0.6 },
+  heroRow: { flexDirection: 'row', gap: 10, marginTop: 10 },
   heroStat: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: Colors.surfaceLight,
     borderRadius: Radius.md,
-    padding: 10,
+    padding: 12,
   },
-  heroIcon: { width: 30, height: 30, borderRadius: 15, backgroundColor: Colors.white, alignItems: 'center', justifyContent: 'center' },
-  heroStatLabel: { fontFamily: Font.medium, fontSize: 12, color: 'rgba(255,255,255,0.9)' },
-  heroStatValue: { fontFamily: Font.extrabold, fontSize: 16, color: Colors.white },
+  heroIcon: { width: 34, height: 34, borderRadius: 17, backgroundColor: Colors.tintOrange, alignItems: 'center', justifyContent: 'center' },
+  heroStatLabel: { fontFamily: Font.medium, fontSize: 13, color: Colors.textSecondary },
+  heroStatValue: { fontFamily: Font.extrabold, fontSize: 17, color: Colors.textPrimary },
 
   card: {
     backgroundColor: Colors.surfaceLight,

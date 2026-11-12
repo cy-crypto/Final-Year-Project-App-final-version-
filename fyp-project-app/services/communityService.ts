@@ -169,3 +169,35 @@ export function timeAgo(iso: string) {
   if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
   return new Date(iso).toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
 }
+
+/* ------------------------------------------------------------------ family */
+
+export type FamilyPerson = { user_id: number; name: string; code: string };
+export type FamilyInvite = FamilyPerson & { id: number; created_at: string };
+export type FamilyOverview = {
+  my_code: string;
+  family: { id: number; name: string; members: (FamilyPerson & { is_me: boolean })[] } | null;
+  incoming: FamilyInvite[];
+  outgoing: FamilyInvite[];
+};
+
+export async function getFamily(): Promise<FamilyOverview> {
+  const response = await api.get(`${BASE}/family/`);
+  return response.data;
+}
+
+/** Sends a request to join your family to the person with this Family ID. */
+export async function inviteToFamily(code: string): Promise<FamilyOverview> {
+  const response = await api.post(`${BASE}/family/invite/`, { code: code.trim().toUpperCase() });
+  return response.data;
+}
+
+export async function respondToInvite(inviteId: number, action: 'accept' | 'decline' | 'cancel'): Promise<FamilyOverview> {
+  const response = await api.post(`${BASE}/family/respond/`, { invite_id: inviteId, action });
+  return response.data;
+}
+
+export async function leaveFamily(): Promise<FamilyOverview> {
+  const response = await api.post(`${BASE}/family/leave/`);
+  return response.data;
+}

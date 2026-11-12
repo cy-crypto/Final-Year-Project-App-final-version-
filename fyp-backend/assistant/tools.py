@@ -449,7 +449,7 @@ REGISTRY = {
     'get_prayer_times': (_tool('get_prayer_times', 'The five daily prayer times, Hijri date, Ramadan Sehri/Iftar '
                                'and the next prayer for a city (default: profile city).',
                                {'city': _S, 'date': _ISO}), get_prayer_times, 'prayer'),
-    'share_streak': (_tool('share_streak', "Share one of the user's habit streaks as a post in the Community "
+    'share_streak': (_tool('share_streak', "Share one of the user's habit streaks as a post in the Family "
                            "feed. Only when the user asked to share. `habit` is its name; default is the "
                            "longest running streak.", {'habit': _S, 'message': _S}), share_streak, 'community'),
     'list_habits': (_tool('list_habits', "List the user's habits with streaks and whether done today."),

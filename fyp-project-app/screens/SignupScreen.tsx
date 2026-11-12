@@ -1,3 +1,4 @@
+import { useFieldChain } from '../hooks/useFieldChain';
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -11,6 +12,8 @@ import type { RootStackParamList } from '../navigation/types';
 export function SignupScreen() {
   const navigation = useNavigation<NavigationProp<RootStackParamList>>();
   const { signup } = useAuth();
+
+  const field = useFieldChain(4, () => handleSignup());
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -57,45 +60,53 @@ export function SignupScreen() {
     <ScreenContainer title="Create your account" subtitle="">
       <View style={styles.group}>
         <Text style={styles.label}>Full name</Text>
-        <TextInput
+        <TextInput {...field(0)}
           value={fullName}
           onChangeText={setFullName}
           placeholder="Noman Shabbir"
           style={styles.input}
+          maxFontSizeMultiplier={1.2}
+          placeholderTextColor={Colors.textHint}
         />
       </View>
 
       <View style={styles.group}>
         <Text style={styles.label}>Email address</Text>
-        <TextInput
+        <TextInput {...field(1)}
           value={email}
           onChangeText={setEmail}
           keyboardType="email-address"
           autoCapitalize="none"
           placeholder="you@example.com"
           style={styles.input}
+          maxFontSizeMultiplier={1.2}
+          placeholderTextColor={Colors.textHint}
         />
       </View>
 
       <View style={styles.group}>
         <Text style={styles.label}>Password</Text>
-        <TextInput
+        <TextInput {...field(2)}
           value={password}
           onChangeText={setPassword}
           secureTextEntry
           placeholder="••••••••"
           style={styles.input}
+          maxFontSizeMultiplier={1.2}
+          placeholderTextColor={Colors.textHint}
         />
       </View>
 
       <View style={styles.group}>
         <Text style={styles.label}>Confirm Password</Text>
-        <TextInput
+        <TextInput {...field(3)}
           value={confirmPassword}
           onChangeText={setConfirmPassword}
           secureTextEntry
           placeholder="••••••••"
           style={styles.input}
+          maxFontSizeMultiplier={1.2}
+          placeholderTextColor={Colors.textHint}
         />
       </View>
 
@@ -137,7 +148,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   input: {
-    height: 44,
+    height: 48,
+    fontSize: 14,
+    color: '#000000',
+    paddingVertical: 0,
+    textAlignVertical: 'center',
     borderWidth: 1,
     borderColor: Colors.borderLight,
     borderRadius: Radius.md,

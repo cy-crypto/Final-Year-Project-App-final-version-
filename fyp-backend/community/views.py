@@ -12,8 +12,9 @@ from accounts.timezones import user_now
 from fitness.models import FitnessRecord
 from habits.models import Habit
 
+from . import family as fam
 from . import services
-from .models import Challenge, ChallengeParticipant, Comment, Post, PostLike
+from .models import Challenge, ChallengeParticipant, Comment, FamilyInvite, FamilyMember, Post, PostLike
 from .serializers import ChallengeSerializer, CommentSerializer, PostSerializer, ShareSerializer
 
 User = get_user_model()
@@ -42,7 +43,7 @@ class PostViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        qs = Post.objects.select_related('author').annotate(
+        qs = Post.objects.filter(author_id__in=fam.family_user_ids(user)).select_related('author').annotate(
             like_count=Count('likes', distinct=True),
             comment_count=Count('comments', distinct=True),
             liked=Exists(PostLike.objects.filter(post=OuterRef('pk'), user=user)),
@@ -145,7 +146,7 @@ class PostViewSet(viewsets.ModelViewSet):
         metric = request.query_params.get('metric', 'streak')
         if metric not in ('streak', 'tasks'):
             return Response({'detail': 'metric must be streak or tasks.'}, status=status.HTTP_400_BAD_REQUEST)
-        users = User.objects.filter(is_active=True)
+        users = User.objects.filter(is_active=True, id__in=fam.family_user_ids(request.user))
         return Response(services.leaderboard(users, metric, request.user))
 
 
@@ -171,7 +172,7 @@ class ChallengeViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        qs = Challenge.objects.annotate(
+        qs = Challenge.objects.filter(created_by_id__in=fam.family_user_ids(user)).annotate(
             participant_count=Count('participants', distinct=True),
             joined=Exists(ChallengeParticipant.objects.filter(challenge=OuterRef('pk'), user=user)),
         )
@@ -203,7 +204,8 @@ class ChallengeViewSet(viewsets.ModelViewSet):
         challenge = self.get_object()
         end = min(challenge.end_date, user_now(request.user).date())
         rows = []
-        for entry in challenge.participants.select_related('user'):
+        family_ids = set(fam.family_user_ids(request.user))
+        for entry in challenge.participants.select_related('user').filter(user_id__in=family_ids):
             user = entry.user
             profile = services.profile_of(user)
             if user != request.user and not services.is_visible(profile):
@@ -220,3 +222,88 @@ class ChallengeViewSet(viewsets.ModelViewSet):
         for index, row in enumerate(rows, start=1):
             row['rank'] = index
         return Response({'challenge': self.get_serializer(challenge).data, 'rows': rows})
+
+
+class FamilyViewSet(viewsets.ViewSet):
+    """The user's Family ID, family members and invites.
+
+    GET  family/          overview
+    POST family/invite/   {"code": "AB12CD"}  send a request to join your family
+    POST family/respond/  {"invite_id": 1, "action": "accept" | "decline" | "cancel"}
+    POST family/leave/
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def _person(self, user, member=None):
+        member = member or fam.member_of(user)
+        return {'user_id': user.id, 'name': services.display_name(user), 'code': member.code}
+
+    def _overview(self, request):
+        me = fam.member_of(request.user)
+        family = None
+        if me.family_id:
+            members = FamilyMember.objects.filter(family_id=me.family_id).select_related('user').order_by('joined_at')
+            family = {
+                'id': me.family_id,
+                'name': me.family.name,
+                'members': [{**self._person(m.user, m), 'is_me': m.user_id == request.user.id} for m in members],
+            }
+        pending = FamilyInvite.objects.filter(status=FamilyInvite.STATUS_PENDING).select_related('from_user', 'to_user')
+        incoming = [
+            {'id': i.id, **self._person(i.from_user), 'created_at': i.created_at}
+            for i in pending.filter(to_user=request.user)
+        ]
+        outgoing = [
+            {'id': i.id, **self._person(i.to_user), 'created_at': i.created_at}
+            for i in pending.filter(family_id=me.family_id) if me.family_id
+        ] if me.family_id else []
+        return Response({'my_code': me.code, 'family': family, 'incoming': incoming, 'outgoing': outgoing})
+
+    def list(self, request):
+        return self._overview(request)
+
+    @action(detail=False, methods=['post'])
+    def invite(self, request):
+        code = str(request.data.get('code', '')).strip().upper()
+        target = FamilyMember.objects.filter(code=code).select_related('user').first()
+        if not code or not target:
+            return Response({'detail': 'No one has that Family ID. Check it and try again.'}, status=status.HTTP_404_NOT_FOUND)
+        if target.user_id == request.user.id:
+            return Response({'detail': 'That is your own Family ID.'}, status=status.HTTP_400_BAD_REQUEST)
+        me = fam.member_of(request.user)
+        if me.family_id and target.family_id == me.family_id:
+            return Response({'detail': 'They are already in your family.'}, status=status.HTTP_400_BAD_REQUEST)
+        family = fam.ensure_family(me)
+        FamilyInvite.objects.get_or_create(
+            family=family, to_user=target.user, status=FamilyInvite.STATUS_PENDING,
+            defaults={'from_user': request.user},
+        )
+        return self._overview(request)
+
+    @action(detail=False, methods=['post'])
+    def respond(self, request):
+        invite = FamilyInvite.objects.filter(pk=request.data.get('invite_id'), status=FamilyInvite.STATUS_PENDING).first()
+        choice = request.data.get('action')
+        if not invite or choice not in ('accept', 'decline', 'cancel'):
+            return Response({'detail': 'This request is no longer available.'}, status=status.HTTP_400_BAD_REQUEST)
+        me = fam.member_of(request.user)
+        if choice == 'cancel':
+            if invite.family_id != me.family_id:
+                return Response({'detail': 'You can only cancel requests from your own family.'}, status=status.HTTP_403_FORBIDDEN)
+            invite.delete()
+        else:
+            if invite.to_user_id != request.user.id:
+                return Response({'detail': 'This request was not sent to you.'}, status=status.HTTP_403_FORBIDDEN)
+            if choice == 'accept':
+                fam.join_family(me, invite.family)
+                invite.status = FamilyInvite.STATUS_ACCEPTED
+            else:
+                invite.status = FamilyInvite.STATUS_DECLINED
+            invite.save(update_fields=['status'])
+        return self._overview(request)
+
+    @action(detail=False, methods=['post'])
+    def leave(self, request):
+        fam.leave_family(fam.member_of(request.user))
+        return self._overview(request)

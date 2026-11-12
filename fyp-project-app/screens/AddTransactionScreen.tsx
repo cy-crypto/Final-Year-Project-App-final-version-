@@ -1,3 +1,4 @@
+import { useFieldChain } from '../hooks/useFieldChain';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -11,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { FormHeader } from '../components/module/ModuleUI';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -30,6 +32,8 @@ import type { RootStackParamList } from '../navigation/types';
 type AddTransactionScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type AddTransactionScreenRouteProp = RouteProp<RootStackParamList, 'AddTransaction'>;
 
+const INCOME_CATEGORIES = ['Salary', 'Business', 'Freelance', 'Gift', 'Investment', 'Other'];
+
 function todayString() {
   return toDateStr(new Date());
 }
@@ -39,6 +43,8 @@ export function AddTransactionScreen() {
   const route = useRoute<AddTransactionScreenRouteProp>();
   const editingTransaction = route.params?.transaction ?? null;
   const isEditMode = editingTransaction !== null;
+
+  const field = useFieldChain(2, () => handleSubmit());
 
   const [type, setType] = useState<TransactionType>(editingTransaction?.type ?? 'expense');
   const [amount, setAmount] = useState(editingTransaction?.amount ?? '');
@@ -57,10 +63,13 @@ export function AddTransactionScreen() {
       .catch(() => {});
   }, []);
 
-  const categoryChips = [
-    ...budgetCategories,
-    ...DEFAULT_CATEGORIES.filter((c) => !budgetCategories.some((b) => b.toLowerCase() === c.toLowerCase())),
-  ];
+  const categoryChips =
+    type === 'income'
+      ? INCOME_CATEGORIES
+      : [
+          ...budgetCategories,
+          ...DEFAULT_CATEGORIES.filter((c) => !budgetCategories.some((b) => b.toLowerCase() === c.toLowerCase())),
+        ];
 
   useEffect(() => {
     const backAction = () => {
@@ -99,6 +108,11 @@ export function AddTransactionScreen() {
       return;
     }
 
+    if (!category.trim()) {
+      setLocalError('Please choose or enter a category.');
+      return;
+    }
+
     if (!date) {
       setLocalError('Date is required.');
       return;
@@ -109,7 +123,7 @@ export function AddTransactionScreen() {
       const payload = {
         type,
         amount: trimmedAmount,
-        category: category.trim() || undefined,
+        category: category.trim(),
         description: description.trim() || undefined,
         date,
       };
@@ -145,13 +159,7 @@ export function AddTransactionScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.modalHeader}>
-        <Pressable onPress={handleGoBack}>
-          <Text style={styles.backButton}>← Back</Text>
-        </Pressable>
-        <Text style={styles.modalTitle}>{isEditMode ? 'Edit Transaction' : 'Add Transaction'}</Text>
-        <View style={styles.placeholder} />
-      </View>
+      <FormHeader title={isEditMode ? 'Edit Transaction' : 'Add Transaction'} onBack={handleGoBack} />
 
       <View style={styles.formCard}>
         <View style={styles.formGroup}>
@@ -176,7 +184,7 @@ export function AddTransactionScreen() {
 
         <View style={styles.formGroup}>
           <Text style={styles.formLabel}>Amount</Text>
-          <TextInput
+          <TextInput {...field(0)}
             style={styles.formInput}
             placeholder="0.00"
             placeholderTextColor="#9CA3AF"
@@ -187,8 +195,8 @@ export function AddTransactionScreen() {
         </View>
 
         <View style={styles.formGroup}>
-          <Text style={styles.formLabel}>Category (optional)</Text>
-          {type === 'expense' && (
+          <Text style={styles.formLabel}>Category *</Text>
+          {(
             <View style={styles.chipWrap}>
               {categoryChips.map((c) => {
                 const active = category.trim().toLowerCase() === c.toLowerCase();
@@ -200,9 +208,9 @@ export function AddTransactionScreen() {
               })}
             </View>
           )}
-          <TextInput
+          <TextInput {...field(1)}
             style={styles.formInput}
-            placeholder="e.g. Groceries"
+            placeholder={type === 'income' ? 'e.g. Salary or your own category' : 'e.g. Groceries or your own category'}
             placeholderTextColor="#9CA3AF"
             value={category}
             onChangeText={setCategory}
@@ -260,29 +268,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.bgLight,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  backButton: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.primary,
-  },
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: Colors.primary,
-    textAlign: 'center',
-    flex: 1,
-    letterSpacing: -0.3,
-  },
-  placeholder: {
-    width: 60,
   },
   formCard: {
     backgroundColor: Colors.surfaceLight,

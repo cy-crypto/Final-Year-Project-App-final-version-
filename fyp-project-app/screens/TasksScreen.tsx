@@ -15,7 +15,6 @@ import {
   CenterLoader,
   ChipRow,
   EmptyCard,
-  Fab,
   HeroCard,
   HeroStat,
   HeroStats,
@@ -38,8 +37,12 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'insights', label: 'Insights' },
 ];
 
-const STATUS_FILTERS: { key: 'all' | TaskStatus; label: string }[] = [
+type StatusFilter = 'all' | 'open' | 'overdue' | TaskStatus;
+
+const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
   { key: 'all', label: 'All' },
+  { key: 'open', label: 'Open' },
+  { key: 'overdue', label: 'Overdue' },
   { key: 'pending', label: 'To do' },
   { key: 'in_progress', label: 'In progress' },
   { key: 'done', label: 'Done' },
@@ -60,7 +63,7 @@ export function TasksScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | TaskStatus>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [priorityFilter, setPriorityFilter] = useState<'any' | TaskPriority>('any');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [loadedOnce, setLoadedOnce] = useState(false);
@@ -100,9 +103,10 @@ export function TasksScreen() {
     const term = search.trim().toLowerCase();
     return sorted.filter(
       (t) =>
-        (statusFilter === 'all' || t.status === statusFilter) &&
+        (statusFilter === 'all' ||
+          (statusFilter === 'open' ? !t.done : statusFilter === 'overdue' ? isOverdue(t) : t.status === statusFilter)) &&
         (priorityFilter === 'any' || t.priority === priorityFilter) &&
-        (categoryFilter === 'all' || t.category === categoryFilter) &&
+        (categoryFilter === 'all' || (t.category || 'Uncategorized') === categoryFilter) &&
         (!term ||
           t.title.toLowerCase().includes(term) ||
           t.description.toLowerCase().includes(term) ||
@@ -111,6 +115,15 @@ export function TasksScreen() {
   }, [sorted, search, statusFilter, priorityFilter, categoryFilter]);
 
   const openTask = (task: Task) => navigation.navigate('TaskDetail', { taskId: task.id });
+
+  // Jumps to the All tab with the given filters applied (used by the tiles).
+  const openList = (filters: { status?: StatusFilter; priority?: 'any' | TaskPriority; category?: string }) => {
+    setSearch('');
+    setStatusFilter(filters.status ?? 'all');
+    setPriorityFilter(filters.priority ?? 'any');
+    setCategoryFilter(filters.category ?? 'all');
+    setTab('all');
+  };
 
   const confirmDelete = (task: Task) =>
     Alert.alert('Delete task', `Delete "${task.title}"?`, [
@@ -144,8 +157,8 @@ export function TasksScreen() {
           </View>
         ) : null}
         <HeroStats>
-          <HeroStat icon="list" label="Open tasks" value={String(openCount)} />
-          <HeroStat icon="alert-circle" label="Overdue" value={String(overdue.length)} />
+          <HeroStat icon="list" label="Open tasks" value={String(openCount)} onPress={() => openList({ status: 'open' })} />
+          <HeroStat icon="alert-circle" label="Overdue" value={String(overdue.length)} onPress={() => openList({ status: 'overdue' })} />
         </HeroStats>
       </HeroCard>
 
@@ -204,7 +217,7 @@ export function TasksScreen() {
       <ModuleHeader
         title="Tasks"
         subtitle="Plan it, track it, finish it."
-        actions={[{ icon: 'add-circle-outline', label: 'Add task', onPress: () => navigation.navigate('AddTask') }]}
+        actions={[{ icon: 'add', label: 'Add task', onPress: () => navigation.navigate('AddTask'), primary: true }]}
       />
       <PillTabs tabs={TABS} value={tab} onChange={setTab} />
 
@@ -222,11 +235,10 @@ export function TasksScreen() {
               ? renderAll()
               : tab === 'calendar'
                 ? <TaskCalendarTab tasks={sorted} onOpen={openTask} onToggle={(t) => toggleTask(t.id)} />
-                : <TaskInsightsTab reloadKey={reloadKey} />}
+                : <TaskInsightsTab reloadKey={reloadKey} onOpenList={openList} />}
         </ScrollView>
       )}
 
-      {tab !== 'insights' ? <Fab onPress={() => navigation.navigate('AddTask')} label="Add task" aboveAssistant /> : null}
     </SafeAreaView>
   );
 }

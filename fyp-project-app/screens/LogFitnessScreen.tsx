@@ -1,3 +1,4 @@
+import { useFieldChain } from '../hooks/useFieldChain';
 import React, { useCallback, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,6 +10,7 @@ import { Card, CenterLoader, ErrorText, Field, FormCard, FormHeader, Input, Prim
 type WorkoutRow = { exercise: string; durationMin: string; original?: WorkoutLogEntry };
 export function LogFitnessScreen() {
   const navigation = useNavigation();
+  const field = useFieldChain(3, () => save());
   const [today, setToday] = useState<FitnessRecordDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -70,14 +72,14 @@ export function LogFitnessScreen() {
         <FormCard>
           <Text style={s.bodyStrong}>{today?.date ?? 'Record unavailable'}</Text>
           <Field label="Steps (daily total)" hint="This replaces the daily total; it does not add another reading.">
-            <Input accessibilityLabel="Daily step total" style={{ minHeight: 46 }} keyboardType="number-pad" value={steps} onChangeText={(v) => { setSteps(v); setDirty((d) => ({ ...d, steps: true })); }} editable={!busy && Boolean(today)} placeholder="Not recorded" />
+            <Input {...field(0)} accessibilityLabel="Daily step total" style={{ minHeight: 46 }} keyboardType="number-pad" value={steps} onChangeText={(v) => { setSteps(v); setDirty((d) => ({ ...d, steps: true })); }} editable={!busy && Boolean(today)} placeholder="Not recorded" />
           </Field>
           <Field label="Manual calorie override (kcal, optional)" hint="Replaces calorie-goal progress rather than adding to the walking estimate. Clear this field to use the estimate again.">
-            <Input accessibilityLabel="Manual calorie override in kcal" style={{ minHeight: 46 }} keyboardType="decimal-pad" value={calories} onChangeText={(v) => { setCalories(v); setDirty((d) => ({ ...d, calories: true })); }} editable={!busy && Boolean(today)} placeholder="Use walking estimate" />
+            <Input {...field(1)} accessibilityLabel="Manual calorie override in kcal" style={{ minHeight: 46 }} keyboardType="decimal-pad" value={calories} onChangeText={(v) => { setCalories(v); setDirty((d) => ({ ...d, calories: true })); }} editable={!busy && Boolean(today)} placeholder="Use walking estimate" />
           </Field>
           <Text style={s.muted}>Walking estimates update automatically from saved steps and measurements. Blank, untouched fields never erase existing activity.</Text>
           <Field label="Last night’s sleep (minutes, optional)" hint="Existing duration-only logs stay separate from bedtime/wake-up records.">
-            <Input accessibilityLabel="Sleep duration in minutes" keyboardType="number-pad" value={sleep} onChangeText={(v) => { setSleep(v); setDirty((d) => ({ ...d, sleep: true })); }} editable={!busy && Boolean(today)} />
+            <Input {...field(2)} accessibilityLabel="Sleep duration in minutes" keyboardType="number-pad" value={sleep} onChangeText={(v) => { setSleep(v); setDirty((d) => ({ ...d, sleep: true })); }} editable={!busy && Boolean(today)} />
           </Field>
           <Text style={s.bodyStrong}>Workouts</Text>
           {workouts.map((row, index) => <View key={index} style={{ gap: 8 }}>

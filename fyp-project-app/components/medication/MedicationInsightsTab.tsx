@@ -3,7 +3,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import { Colors, Font } from '../../constants/theme';
 import { toApiErrorMessage } from '../../services/api';
-import { getAdherence, type Adherence, type Medication } from '../../services/medicationService';
+import { getAdherence, type Adherence, type DoseStatus, type Medication } from '../../services/medicationService';
 import { BarChart } from '../module/BarChart';
 import { Card, ChipRow, EmptyCard, ListRow, ProgressBar, StatTile, moduleStyles } from '../module/ModuleUI';
 
@@ -12,7 +12,17 @@ const RANGES: { key: '7' | '14'; label: string }[] = [
   { key: '14', label: 'Last 14 days' },
 ];
 
-export function MedicationInsightsTab({ medications, reloadKey }: { medications: Medication[]; reloadKey: number }) {
+export function MedicationInsightsTab({
+  medications,
+  reloadKey,
+  onOpenHistory,
+  onOpenMedication,
+}: {
+  medications: Medication[];
+  reloadKey: number;
+  onOpenHistory?: (status: 'all' | DoseStatus, range: '7' | '30') => void;
+  onOpenMedication?: (med: Medication) => void;
+}) {
   const [range, setRange] = useState<'7' | '14'>('7');
   const [data, setData] = useState<Adherence | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -32,6 +42,8 @@ export function MedicationInsightsTab({ medications, reloadKey }: { medications:
   }, [range, reloadKey]);
 
   const active = medications.filter((m) => m.is_active);
+  // History offers 7/30/90 days, so the 14-day view opens the 30-day history.
+  const historyRange = range === '7' ? '7' : '30';
   const totals = data?.days.reduce(
     (acc, d) => ({ skipped: acc.skipped + d.skipped, missed: acc.missed + d.missed }),
     { skipped: 0, missed: 0 }
@@ -55,9 +67,9 @@ export function MedicationInsightsTab({ medications, reloadKey }: { medications:
             </View>
             <ProgressBar pct={data.rate ?? 0} color={data.rate !== null && data.rate < 70 ? Colors.error : Colors.success} />
             <View style={moduleStyles.grid}>
-              <StatTile label="Taken" value={String(data.taken)} tint={Colors.tintGreen} color={Colors.success} />
-              <StatTile label="Skipped" value={String(totals.skipped)} tint={Colors.tintSlate} color={Colors.textSecondary} />
-              <StatTile label="Missed" value={String(totals.missed)} tint={Colors.tintRose} color={Colors.error} />
+              <StatTile label="Taken" value={String(data.taken)} tint={Colors.tintGreen} color={Colors.success} onPress={() => onOpenHistory?.('taken', historyRange)} />
+              <StatTile label="Skipped" value={String(totals.skipped)} tint={Colors.tintSlate} color={Colors.textSecondary} onPress={() => onOpenHistory?.('skipped', historyRange)} />
+              <StatTile label="Missed" value={String(totals.missed)} tint={Colors.tintRose} color={Colors.error} onPress={() => onOpenHistory?.('all', historyRange)} />
             </View>
           </Card>
 
@@ -85,6 +97,7 @@ export function MedicationInsightsTab({ medications, reloadKey }: { medications:
                   meta={m.days_of_supply_left !== null ? `About ${m.days_of_supply_left} day(s) left` : 'Taken as needed'}
                   right={`${m.supply_count} left`}
                   rightColor={m.needs_refill ? Colors.error : undefined}
+                  onPress={onOpenMedication ? () => onOpenMedication(m) : undefined}
                 />
               ))
             )}

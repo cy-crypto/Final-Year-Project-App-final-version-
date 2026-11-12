@@ -13,7 +13,8 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { ModuleHeader } from '../components/module/ModuleUI';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
@@ -44,6 +45,7 @@ const TYPE_OPTIONS: { key: TypeFilter; label: string }[] = [
 
 export function TransactionsScreen() {
   const navigation = useNavigation<Nav>();
+  const params = useRoute<RouteProp<RootStackParamList, 'Transactions'>>().params;
 
   const [transactions, setTransactions] = useState<TransactionDto[]>([]);
   const [currency, setCurrency] = useState('PKR');
@@ -56,10 +58,19 @@ export function TransactionsScreen() {
 
   const [searchInput, setSearchInput] = useState('');
   const search = useDebouncedValue(searchInput.trim(), 450);
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
-  const [category, setCategory] = useState<string | null>(null);
-  const [dateFrom, setDateFrom] = useState<string | null>(null);
-  const [dateTo, setDateTo] = useState<string | null>(null);
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>(params?.type ?? 'all');
+  const [category, setCategory] = useState<string | null>(params?.category ?? null);
+  const [dateFrom, setDateFrom] = useState<string | null>(params?.dateFrom ?? null);
+  const [dateTo, setDateTo] = useState<string | null>(params?.dateTo ?? null);
+
+  // Opening the screen again from another tile/row applies that tile's filters.
+  useEffect(() => {
+    if (!params) return;
+    setTypeFilter(params.type ?? 'all');
+    setCategory(params.category ?? null);
+    setDateFrom(params.dateFrom ?? null);
+    setDateTo(params.dateTo ?? null);
+  }, [params]);
   const [pickerTarget, setPickerTarget] = useState<'from' | 'to' | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -251,13 +262,7 @@ export function TransactionsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.topBar}>
-        <Pressable style={styles.backBtn} onPress={() => navigation.goBack()} hitSlop={8}>
-          <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
-        </Pressable>
-        <Text style={styles.title}>Transactions</Text>
-        <View style={styles.backBtn} />
-      </View>
+      <ModuleHeader title="Transactions" subtitle="Everything you earned and spent." />
 
       {initialLoading ? (
         <View style={styles.center}>
@@ -314,9 +319,6 @@ export function TransactionsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bgLight },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 8 },
-  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  title: { fontFamily: Font.extrabold, fontSize: 22, color: Colors.textPrimary },
   listContent: { paddingHorizontal: 16, paddingBottom: 110 },
 
   filters: { gap: 12, marginBottom: 8 },

@@ -1,3 +1,4 @@
+import { useFieldChain } from '../hooks/useFieldChain';
 import React, { useCallback, useRef, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,6 +10,7 @@ import { Card, CenterLoader, ChipRow, ErrorText, Field, FormCard, FormHeader, In
 import { Colors } from '../constants/theme';
 
 export function FitnessProfileScreen() {
+  const field = useFieldChain(4, () => save());
   const [profile, setProfile] = useState<FitnessProfileDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -85,15 +87,15 @@ export function FitnessProfileScreen() {
           <Text style={s.body}>Add your own details for an approximate adult walking-energy estimate. Age is saved for your profile and supported range; it is not part of the energy equation.</Text>
           <Segmented options={[{ key: 'metric', label: 'kg / cm' }, { key: 'imperial', label: 'lb / in' }]} value={units} onChange={changeUnits} />
           <Field label={`Weight (${units === 'metric' ? 'kg' : 'lb'})`} hint="Supported range: 25–350 kg.">
-            <Input style={{ minHeight: 46 }} accessibilityLabel="Your weight" value={weight} onChangeText={(v) => { setWeight(v); setDirty(true); setSuccess(false); }} keyboardType="decimal-pad" placeholder={units === 'metric' ? 'e.g. 70.5' : 'e.g. 155.43'} editable={!busy && Boolean(profile)} />
+            <Input {...field(0)} style={{ minHeight: 46 }} accessibilityLabel="Your weight" value={weight} onChangeText={(v) => { setWeight(v); setDirty(true); setSuccess(false); }} keyboardType="decimal-pad" placeholder={units === 'metric' ? 'e.g. 70.5' : 'e.g. 155.43'} editable={!busy && Boolean(profile)} />
           </Field>
           <Field label="Age (years)" hint="Whole number, 18–120. This model supports adults.">
-            <Input style={{ minHeight: 46 }} accessibilityLabel="Your age in years" value={age} onChangeText={(v) => { setAge(v); setDirty(true); setSuccess(false); }} keyboardType="number-pad" placeholder="e.g. 25" editable={!busy && Boolean(profile)} />
+            <Input {...field(1)} style={{ minHeight: 46 }} accessibilityLabel="Your age in years" value={age} onChangeText={(v) => { setAge(v); setDirty(true); setSuccess(false); }} keyboardType="number-pad" placeholder="e.g. 25" editable={!busy && Boolean(profile)} />
           </Field>
           <Field label={`Height (${units === 'metric' ? 'cm' : 'in'})`} hint="Supported range: 100–250 cm. Stored in centimeters.">
-            <Input style={{ minHeight: 46 }} accessibilityLabel="Your height" value={height} onChangeText={(v) => { setHeight(v); setDirty(true); setSuccess(false); }} keyboardType="decimal-pad" placeholder={units === 'metric' ? 'e.g. 175.5' : 'e.g. 69.09'} editable={!busy && Boolean(profile)} />
+            <Input {...field(2)} style={{ minHeight: 46 }} accessibilityLabel="Your height" value={height} onChangeText={(v) => { setHeight(v); setDirty(true); setSuccess(false); }} keyboardType="decimal-pad" placeholder={units === 'metric' ? 'e.g. 175.5' : 'e.g. 69.09'} editable={!busy && Boolean(profile)} />
           </Field>
-          <Field label="Daily water goal (ml)"><Input accessibilityLabel="Daily water goal in ml" value={water} onChangeText={(v) => { setWater(v); setDirty(true); setSuccess(false); }} keyboardType="number-pad" editable={!busy && Boolean(profile)} /></Field>
+          <Field label="Daily water goal (ml)"><Input {...field(3)} accessibilityLabel="Daily water goal in ml" value={water} onChangeText={(v) => { setWater(v); setDirty(true); setSuccess(false); }} keyboardType="number-pad" editable={!busy && Boolean(profile)} /></Field>
           <Field label="Gender (optional)" hint="Preserved for the existing step-goal suggestion. Not used for calorie estimation.">
             <ChipRow options={[{ key: '', label: 'Not set' }, { key: 'male', label: 'Male' }, { key: 'female', label: 'Female' }, { key: 'other', label: 'Other' }]} value={gender} onChange={(v) => { if (!busy) { setGender(v as Gender | ''); setDirty(true); setSuccess(false); } }} />
           </Field>

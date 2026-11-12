@@ -24,6 +24,11 @@ class CommunityTests(TestCase):
         self.b = APIClient()
         self.b.force_authenticate(self.bob)
         self.today = user_now(self.alice).date()
+        # Alice invites Bob with his Family ID and Bob accepts, so they share one family.
+        bob_code = self.b.get('/api/community/family/').data['my_code']
+        self.a.post('/api/community/family/invite/', {'code': bob_code}, format='json')
+        invite_id = self.b.get('/api/community/family/').data['incoming'][0]['id']
+        self.b.post('/api/community/family/respond/', {'invite_id': invite_id, 'action': 'accept'}, format='json')
 
     def test_post_comment_like_and_ownership(self):
         res = self.a.post('/api/community/posts/', {'content': '  Hello all '}, format='json')
@@ -107,3 +112,62 @@ class CommunityTests(TestCase):
         self.assertEqual(standings[0]['name'], 'Bob')
         self.assertEqual(standings[0]['progress'], 1)
         self.assertEqual(self.b.delete(f'/api/community/challenges/{challenge_id}/').status_code, 403)
+
+
+class FamilyTests(TestCase):
+    def setUp(self):
+        self.users = {}
+        self.clients = {}
+        for name in ('ali', 'sara', 'omar'):
+            user = User.objects.create_user(f'{name}@test.com', f'{name}@test.com')
+            UserProfile.objects.create(user=user, full_name=name.title(), timezone='Asia/Karachi')
+            client = APIClient()
+            client.force_authenticate(user)
+            self.users[name], self.clients[name] = user, client
+
+    def overview(self, name):
+        return self.clients[name].get('/api/community/family/').data
+
+    def test_invite_accept_and_privacy(self):
+        ali, sara, omar = self.clients['ali'], self.clients['sara'], self.clients['omar']
+        code = self.overview('sara')['my_code']
+        self.assertEqual(len(code), 6)
+
+        self.assertEqual(ali.post('/api/community/family/invite/', {'code': 'NOPE99'}, format='json').status_code, 404)
+        self.assertEqual(ali.post('/api/community/family/invite/', {'code': self.overview('ali')['my_code']}, format='json').status_code, 400)
+        res = ali.post('/api/community/family/invite/', {'code': code.lower()}, format='json')
+        self.assertEqual(len(res.data['outgoing']), 1)
+
+        # Before accepting, Sara cannot see Ali's posts.
+        ali.post('/api/community/posts/', {'content': 'Family dinner at 8'}, format='json')
+        self.assertEqual(sara.get('/api/community/posts/').data['results'], [])
+
+        invite_id = self.overview('sara')['incoming'][0]['id']
+        res = sara.post('/api/community/family/respond/', {'invite_id': invite_id, 'action': 'accept'}, format='json')
+        self.assertEqual(len(res.data['family']['members']), 2)
+        self.assertEqual(len(sara.get('/api/community/posts/').data['results']), 1)
+
+        # Omar is not in the family: no posts, and only himself on the leaderboard.
+        self.assertEqual(omar.get('/api/community/posts/').data['results'], [])
+        ranked = omar.get('/api/community/posts/leaderboard/').data
+        self.assertTrue(all(row.get('is_me') for row in (ranked.get('rows', ranked) if isinstance(ranked, dict) else ranked)))
+
+        # Leaving hides the family's posts again.
+        sara.post('/api/community/family/leave/')
+        self.assertEqual(sara.get('/api/community/posts/').data['results'], [])
+        self.assertIsNone(self.overview('sara')['family'])
+
+    def test_decline_and_cancel(self):
+        ali, sara = self.clients['ali'], self.clients['sara']
+        ali.post('/api/community/family/invite/', {'code': self.overview('sara')['my_code']}, format='json')
+        invite_id = self.overview('sara')['incoming'][0]['id']
+        # Only the invited person can accept; only the family can cancel.
+        self.assertEqual(ali.post('/api/community/family/respond/', {'invite_id': invite_id, 'action': 'accept'}, format='json').status_code, 403)
+        sara.post('/api/community/family/respond/', {'invite_id': invite_id, 'action': 'decline'}, format='json')
+        self.assertEqual(self.overview('sara')['incoming'], [])
+        self.assertIsNone(self.overview('sara')['family'])
+
+        ali.post('/api/community/family/invite/', {'code': self.overview('sara')['my_code']}, format='json')
+        invite_id = self.overview('ali')['outgoing'][0]['id']
+        ali.post('/api/community/family/respond/', {'invite_id': invite_id, 'action': 'cancel'}, format='json')
+        self.assertEqual(self.overview('sara')['incoming'], [])

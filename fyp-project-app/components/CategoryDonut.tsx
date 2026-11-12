@@ -1,6 +1,7 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
+import { Ionicons } from '@expo/vector-icons';
 
 import { Colors, Font } from '../constants/theme';
 import { CATEGORY_COLORS, formatMoney } from '../utils/budgetFormat';
@@ -12,6 +13,8 @@ type Props = {
   currency: string;
   /** Shown under the total in the middle of the ring. */
   centerLabel?: string;
+  /** Makes each legend row tappable. */
+  onPressCategory?: (label: string) => void;
 };
 
 const SIZE = 156;
@@ -28,7 +31,7 @@ function collapse(rows: DonutRow[]): DonutRow[] {
   return [...sorted.slice(0, MAX_SLICES), { label: 'Other', value: rest }];
 }
 
-export function CategoryDonut({ rows, currency, centerLabel = 'Spent' }: Props) {
+export function CategoryDonut({ rows, currency, centerLabel = 'Spent', onPressCategory }: Props) {
   const slices = collapse(rows.filter((r) => r.value > 0));
   const total = slices.reduce((sum, r) => sum + r.value, 0);
 
@@ -78,12 +81,18 @@ export function CategoryDonut({ rows, currency, centerLabel = 'Spent' }: Props) 
 
       <View style={styles.legend}>
         {slices.map((slice, i) => (
-          <View key={slice.label} style={styles.legendRow}>
+          <Pressable
+            key={slice.label}
+            style={({ pressed }) => [styles.legendRow, pressed && { opacity: 0.6 }]}
+            onPress={onPressCategory ? () => onPressCategory(slice.label) : undefined}
+            disabled={!onPressCategory}
+          >
             <View style={[styles.dot, { backgroundColor: CATEGORY_COLORS[i % CATEGORY_COLORS.length] }]} />
             <Text style={styles.legendLabel} numberOfLines={1}>{slice.label}</Text>
             <Text style={styles.legendPct}>{Math.round((slice.value / total) * 100)}%</Text>
             <Text style={styles.legendValue}>{formatMoney(slice.value)}</Text>
-          </View>
+            {onPressCategory ? <Ionicons name="chevron-forward" size={16} color={Colors.textHint} /> : null}
+          </Pressable>
         ))}
       </View>
     </View>

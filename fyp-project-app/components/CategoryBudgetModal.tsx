@@ -1,3 +1,4 @@
+import { useFieldChain } from '../hooks/useFieldChain';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -35,6 +36,7 @@ type Props = {
 };
 
 export function CategoryBudgetModal({ visible, currency, editing, takenCategories, onClose, onSaved }: Props) {
+  const field = useFieldChain(2, () => handleSave());
   const [category, setCategory] = useState('');
   const [limit, setLimit] = useState('');
   const [saving, setSaving] = useState(false);
@@ -120,7 +122,7 @@ export function CategoryBudgetModal({ visible, currency, editing, takenCategorie
                 </Pressable>
               ))}
             </View>
-            <TextInput
+            <TextInput {...field(0)}
               style={styles.input}
               placeholder="Or type your own category"
               placeholderTextColor={Colors.textHint}
@@ -129,7 +131,7 @@ export function CategoryBudgetModal({ visible, currency, editing, takenCategorie
             />
 
             <Text style={[styles.label, { marginTop: 16 }]}>Monthly limit ({currency})</Text>
-            <TextInput
+            <TextInput {...field(1)}
               style={styles.input}
               placeholder="e.g. 15000"
               placeholderTextColor={Colors.textHint}

@@ -443,7 +443,7 @@ export function FitnessScreen() {
   const incomplete = !profile?.calorieProfileReady;
   const displayedWeight = profile?.weightKg ? `${fromCanonicalMeasurement(Number(profile.weightKg), 'weight', profile.displayUnits)} ${profile.displayUnits === 'imperial' ? 'lb' : 'kg'}` : 'Weight missing';
   const displayedHeight = profile?.heightCm ? `${fromCanonicalMeasurement(Number(profile.heightCm), 'height', profile.displayUnits)} ${profile.displayUnits === 'imperial' ? 'in' : 'cm'}` : 'Height missing';
-  return <SafeAreaView style={s.container}>
+  return <SafeAreaView style={s.container} edges={['top']}>
     <ModuleHeader title="Fitness" subtitle="Your activity, at a glance." actions={[
       { icon: 'flag-outline', label: 'Fitness goals', onPress: handleGoals },
       { icon: 'settings-outline', label: 'Edit fitness profile', onPress: handleProfile },

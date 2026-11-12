@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Colors, Font } from '../../constants/theme';
 import { toApiErrorMessage } from '../../services/api';
@@ -17,7 +17,17 @@ function heat(rate: number | null) {
   return Colors.primary;
 }
 
-export function HabitInsightsTab({ habits, reloadKey }: { habits: HabitDto[]; reloadKey: number }) {
+export function HabitInsightsTab({
+  habits,
+  reloadKey,
+  onOpenHabit,
+  onOpenAll,
+}: {
+  habits: HabitDto[];
+  reloadKey: number;
+  onOpenHabit?: (habit: HabitDto) => void;
+  onOpenAll?: () => void;
+}) {
   const [stats, setStats] = useState<HabitStats | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,14 +51,21 @@ export function HabitInsightsTab({ habits, reloadKey }: { habits: HabitDto[]; re
 
   const week = stats.days.slice(-7);
   const ranked = [...habits].sort((a, b) => b.rate30d - a.rate30d);
+  const bestHabit = [...habits].sort((a, b) => b.bestStreak - a.bestStreak)[0];
 
   return (
     <>
       <Card title="Overview">
         <View style={moduleStyles.grid}>
-          <StatTile label="Check-ins" value={String(stats.total_checkins)} />
-          <StatTile label="Running streaks" value={String(stats.active_streaks)} tint={Colors.tintGreen} color={Colors.success} />
-          <StatTile label="Best streak" value={`${stats.best_streak}d`} tint={Colors.tintIndigo} color={Colors.accentBlue} />
+          <StatTile label="Check-ins" value={String(stats.total_checkins)} onPress={onOpenAll} />
+          <StatTile label="Running streaks" value={String(stats.active_streaks)} tint={Colors.tintGreen} color={Colors.success} onPress={onOpenAll} />
+          <StatTile
+            label="Best streak"
+            value={`${stats.best_streak}d`}
+            tint={Colors.tintIndigo}
+            color={Colors.accentBlue}
+            onPress={bestHabit && onOpenHabit ? () => onOpenHabit(bestHabit) : undefined}
+          />
         </View>
         <View style={moduleStyles.rowBetween}>
           <Text style={moduleStyles.muted}>Daily habits done this week</Text>
@@ -86,7 +103,12 @@ export function HabitInsightsTab({ habits, reloadKey }: { habits: HabitDto[]; re
         {ranked.map((h) => {
           const meta = CATEGORY_META[h.category];
           return (
-            <View key={h.id} style={{ gap: 6 }}>
+            <Pressable
+              key={h.id}
+              style={({ pressed }) => [{ gap: 6 }, pressed && { opacity: 0.6 }]}
+              onPress={onOpenHabit ? () => onOpenHabit(h) : undefined}
+              disabled={!onOpenHabit}
+            >
               <View style={moduleStyles.rowBetween}>
                 <Text style={moduleStyles.bodyStrong} numberOfLines={1}>
                   {h.name}
@@ -94,7 +116,7 @@ export function HabitInsightsTab({ habits, reloadKey }: { habits: HabitDto[]; re
                 <Text style={moduleStyles.muted}>{h.rate30d}%</Text>
               </View>
               <ProgressBar pct={h.rate30d} color={meta.color} />
-            </View>
+            </Pressable>
           );
         })}
       </Card>

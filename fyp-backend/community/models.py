@@ -79,3 +79,38 @@ class ChallengeParticipant(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['challenge', 'user'], name='join_challenge_once')]
+
+
+class Family(models.Model):
+    """A private circle. Posts, challenges and the leaderboard are only visible inside it."""
+
+    name = models.CharField(max_length=60, default='My Family')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
+
+class FamilyMember(models.Model):
+    """Every user gets a short Family ID; `family` is set once they are in a family."""
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='family_member')
+    code = models.CharField(max_length=8, unique=True)
+    family = models.ForeignKey(Family, on_delete=models.SET_NULL, null=True, blank=True, related_name='members')
+    joined_at = models.DateTimeField(null=True, blank=True)
+
+
+class FamilyInvite(models.Model):
+    STATUS_PENDING = 'pending'
+    STATUS_ACCEPTED = 'accepted'
+    STATUS_DECLINED = 'declined'
+    STATUS_CHOICES = [(STATUS_PENDING, 'Pending'), (STATUS_ACCEPTED, 'Accepted'), (STATUS_DECLINED, 'Declined')]
+
+    family = models.ForeignKey(Family, on_delete=models.CASCADE, related_name='invites')
+    from_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='family_invites_sent')
+    to_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='family_invites_received')
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']

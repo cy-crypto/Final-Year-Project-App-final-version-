@@ -1,3 +1,4 @@
+import { useFieldChain } from '../hooks/useFieldChain';
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, TextInput, Pressable, StyleSheet, Alert } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -13,6 +14,8 @@ export function ConfirmCodeScreen() {
   const route = useRoute<RouteProp<RootStackParamList, 'ConfirmCode'>>();
   const { verifyEmail, resendVerification } = useAuth();
   const email = route.params?.email ?? '';
+
+  const field = useFieldChain(1, () => handleVerify());
 
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
@@ -95,7 +98,7 @@ export function ConfirmCodeScreen() {
 
       <View style={styles.group}>
         <Text style={styles.label}>Confirmation code (optional)</Text>
-        <TextInput
+        <TextInput {...field(0)}
           value={code}
           onChangeText={setCode}
           placeholder="123456"

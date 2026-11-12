@@ -15,7 +15,6 @@ import {
   CenterLoader,
   ChipRow,
   EmptyCard,
-  Fab,
   HeroCard,
   HeroStat,
   HeroStats,
@@ -143,8 +142,16 @@ export function HabitsScreen() {
             <ProgressBar pct={daily.length ? (dailyDone / daily.length) * 100 : toDo.length ? 0 : 100} color={Colors.white} />
           </View>
           <HeroStats>
-            <HeroStat icon="flame" label="Best running" value={`${bestRunning} days`} />
-            <HeroStat icon="trending-up" label="30-day average" value={`${avgRate}%`} />
+            <HeroStat
+              icon="flame"
+              label="Best running"
+              value={`${bestRunning} days`}
+              onPress={() => {
+                const top = habits.find((h) => h.streakCount === bestRunning);
+                if (top) open(top);
+              }}
+            />
+            <HeroStat icon="trending-up" label="30-day average" value={`${avgRate}%`} onPress={() => setTab('insights')} />
           </HeroStats>
         </HeroCard>
 
@@ -194,8 +201,7 @@ export function HabitsScreen() {
       <ModuleHeader
         title="Habits"
         subtitle="Small steps, every day."
-        showBack={false}
-        actions={[{ icon: 'add-circle-outline', label: 'Add habit', onPress: () => navigation.navigate('AddHabit') }]}
+        actions={[{ icon: 'add', label: 'Add habit', onPress: () => navigation.navigate('AddHabit'), primary: true }]}
       />
       <PillTabs
         tabs={[
@@ -213,10 +219,9 @@ export function HabitsScreen() {
           contentContainerStyle={moduleStyles.content}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
         >
-          {tab === 'today' ? renderToday() : tab === 'all' ? renderAll() : <HabitInsightsTab habits={habits} reloadKey={reloadKey} />}
+          {tab === 'today' ? renderToday() : tab === 'all' ? renderAll() : <HabitInsightsTab habits={habits} reloadKey={reloadKey} onOpenHabit={open} onOpenAll={() => setTab('all')} />}
         </ScrollView>
       )}
-      {tab !== 'insights' ? <Fab onPress={() => navigation.navigate('AddHabit')} label="Add habit" aboveAssistant /> : null}
     </SafeAreaView>
   );
 }

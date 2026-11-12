@@ -233,7 +233,7 @@ export function TaskDetailScreen() {
           </View>
           <HeroStats>
             <HeroStat icon="calendar" label={overdue ? 'Overdue' : 'Deadline'} value={task.deadline ? dueLabel(task).replace('Overdue · ', '') : 'None'} />
-            <HeroStat icon="timer" label="Time spent" value={formatDuration(task.time_spent_seconds)} />
+            <HeroStat icon="flag" label="Priority" value={priority.label} />
           </HeroStats>
         </HeroCard>
 
@@ -260,34 +260,9 @@ export function TaskDetailScreen() {
           {task.completed_at ? <Text style={moduleStyles.muted}>Completed {formatDateTime(task.completed_at)}</Text> : null}
         </Card>
 
-        <Card title="Time tracker" right={timerStart !== null ? <Pill text="Running" color={Colors.success} bg={Colors.tintGreen} /> : undefined}>
-          <Text style={styles.clock}>{formatClock(timerStart !== null ? elapsed : 0)}</Text>
-          {timerStart !== null ? (
-            <PrimaryButton label="Stop & save" icon="stop" onPress={stopTimer} />
-          ) : (
-            <PrimaryButton label="Start timer" icon="play" onPress={startTimer} disabled={task.done} />
-          )}
-          <View style={moduleStyles.grid}>
-            {[15, 30, 60].map((minutes) => (
-              <SecondaryButton
-                key={minutes}
-                label={`+${minutes}m`}
-                style={{ flex: 1 }}
-                onPress={() => run(() => logTime(task.id, minutes * 60), 'Could not save the time.')}
-              />
-            ))}
-          </View>
-          <Text style={moduleStyles.muted}>Total tracked: {formatDuration(task.time_spent_seconds)}</Text>
-        </Card>
-
         <Card title="Reminders">
           <InfoRow icon="alarm-outline" label="Reminder" value={task.reminder_time ? formatDateTime(task.reminder_time) : 'Not set'} />
           <InfoRow icon="calendar-outline" label="Due-day alert" value={task.deadline && !task.done ? '9:00 on the due day' : 'Off'} />
-          {task.email_reminder_enabled ? (
-            <SecondaryButton label="Email me this task" icon="mail-outline" onPress={emailMe} />
-          ) : (
-            <Text style={moduleStyles.muted}>Turn on Email reminder in Edit to email yourself this task.</Text>
-          )}
         </Card>
 
         <Card title="Attachments">

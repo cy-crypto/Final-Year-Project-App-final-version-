@@ -59,3 +59,5 @@ node_modules/
 
 # Local env copies that may contain secrets
 _env*
+# Cached answers from outside APIs
+.cache/

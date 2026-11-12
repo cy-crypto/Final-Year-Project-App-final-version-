@@ -20,7 +20,7 @@ export function HabitCard({ habit, onPress, onToggle, onLongPress }: Props) {
   return (
     <Pressable style={({ pressed }) => [styles.card, pressed && { opacity: 0.9 }]} onPress={onPress} onLongPress={onLongPress}>
       <View style={[styles.icon, { backgroundColor: meta.bg }]}>
-        <Ionicons name={meta.icon} size={20} color={meta.color} />
+        <Ionicons name={meta.icon} size={18} color={meta.color} />
       </View>
       <View style={styles.info}>
         <Text style={[styles.name, done && styles.nameDone]} numberOfLines={1}>
@@ -31,11 +31,11 @@ export function HabitCard({ habit, onPress, onToggle, onLongPress }: Props) {
           <Text style={[styles.meta, habit.streakCount > 0 && { color: Colors.primary }]} numberOfLines={1}>
             {progressLabel(habit)}
           </Text>
-        </View>
-        <View style={styles.dots}>
-          {habit.last7Days.map((d) => (
-            <View key={d.date} style={[styles.dot, d.done && styles.dotDone]} />
-          ))}
+          <View style={styles.dots}>
+            {habit.last7Days.map((d) => (
+              <View key={d.date} style={[styles.dot, d.done && styles.dotDone]} />
+            ))}
+          </View>
         </View>
       </View>
       <Pressable
@@ -46,7 +46,7 @@ export function HabitCard({ habit, onPress, onToggle, onLongPress }: Props) {
         accessibilityState={{ checked: done }}
         accessibilityLabel={done ? `Undo ${habit.name}` : `Check in ${habit.name}`}
       >
-        <Ionicons name="checkmark" size={24} color={done ? Colors.white : Colors.primary} />
+        {done ? <Ionicons name="checkmark" size={18} color={Colors.white} /> : null}
       </Pressable>
     </Pressable>
   );
@@ -64,24 +64,23 @@ const styles = StyleSheet.create({
     padding: 12,
     ...Shadows.card,
   },
-  icon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  info: { flex: 1, gap: 4 },
+  icon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  info: { flex: 1, gap: 3 },
   name: { fontFamily: Font.bold, fontSize: 15, color: Colors.textPrimary },
   nameDone: { color: Colors.textSecondary },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  meta: { flex: 1, fontFamily: Font.semibold, fontSize: 12, color: Colors.textSecondary },
-  dots: { flexDirection: 'row', gap: 4 },
-  dot: { width: 14, height: 6, borderRadius: 3, backgroundColor: Colors.borderLight },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  meta: { flex: 1, fontFamily: Font.medium, fontSize: 13, color: Colors.textSecondary },
+  dots: { flexDirection: 'row', gap: 3 },
+  dot: { width: 8, height: 6, borderRadius: 3, backgroundColor: Colors.borderLight },
   dotDone: { backgroundColor: Colors.primary },
   check: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     borderWidth: 2,
     borderColor: Colors.primary,
-    backgroundColor: Colors.primarySurface,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  checkDone: { backgroundColor: Colors.primary, ...Shadows.button },
+  checkDone: { backgroundColor: Colors.primary },
 });

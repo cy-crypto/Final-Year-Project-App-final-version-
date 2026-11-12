@@ -173,6 +173,14 @@ export function SpendingCalendar({ currency, reloadKey }: Props) {
             <Text style={styles.dayTitle}>{dayLabel(selected)}</Text>
             <Text style={styles.dayTotal}>{dayExpense > 0 ? `${currency} ${formatMoney(dayExpense)} spent` : ''}</Text>
           </View>
+          {dayItems.length > 0 ? (
+            <Pressable
+              onPress={() => navigation.navigate('Transactions', { dateFrom: selected, dateTo: selected })}
+              hitSlop={8}
+            >
+              <Text style={styles.seeAll}>See all in Transactions</Text>
+            </Pressable>
+          ) : null}
           {dayItems.length === 0 ? (
             <Text style={styles.empty}>Nothing recorded on this day.</Text>
           ) : (
@@ -227,5 +235,6 @@ const styles = StyleSheet.create({
   dayHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   dayTitle: { fontFamily: Font.extrabold, fontSize: 15, color: Colors.textPrimary },
   dayTotal: { fontFamily: Font.bold, fontSize: 13, color: Colors.primary },
+  seeAll: { fontFamily: Font.bold, fontSize: 13, color: Colors.primary },
   empty: { fontFamily: Font.medium, fontSize: 13, color: Colors.textSecondary },
 });

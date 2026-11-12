@@ -1,3 +1,4 @@
+import { useFieldChain } from '../hooks/useFieldChain';
 import React, { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,6 +15,7 @@ const SUGGESTED_TARGET: Record<ChallengeMetric, string> = { habit_checkins: '7',
 
 export function CreateChallengeScreen() {
   const navigation = useNavigation();
+  const field = useFieldChain(2, () => submit());
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [metric, setMetric] = useState<ChallengeMetric>('habit_checkins');
@@ -58,7 +60,7 @@ export function CreateChallengeScreen() {
         <ScrollView contentContainerStyle={moduleStyles.formContent} keyboardShouldPersistTaps="handled">
           <FormCard>
             <Field label="Name">
-              <Input placeholder="e.g. 7 days of reading" value={title} onChangeText={setTitle} maxLength={120} />
+              <Input {...field(0)} placeholder="e.g. 7 days of reading" value={title} onChangeText={setTitle} maxLength={120} />
             </Field>
             <Field label="Description (optional)">
               <Input placeholder="What is the challenge about?" multiline value={description} onChangeText={setDescription} />
@@ -74,7 +76,7 @@ export function CreateChallengeScreen() {
               />
             </Field>
             <Field label={`Target (${METRIC_LABELS[metric].unit})`}>
-              <Input keyboardType="number-pad" value={target} onChangeText={setTarget} />
+              <Input {...field(1)} keyboardType="number-pad" value={target} onChangeText={setTarget} />
             </Field>
             <Field label="Starts">
               <DateTimeInput value={start} mode="date" onChange={setStart} />

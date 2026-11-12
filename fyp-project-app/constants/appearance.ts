@@ -47,12 +47,9 @@ export function isDarkMode() {
 }
 
 export async function loadAppearance(): Promise<AppearanceSettings> {
-  try {
-    const raw = await AsyncStorage.getItem(STORAGE_KEY);
-    return raw ? { ...DEFAULTS, ...JSON.parse(raw) } : DEFAULTS;
-  } catch {
-    return DEFAULTS;
-  }
+  // The Appearance setting was removed from Profile, so nobody stays stuck on an old dark/large choice.
+  AsyncStorage.removeItem(STORAGE_KEY).catch(() => {});
+  return DEFAULTS;
 }
 
 /** Saves the choice and restarts the JS app so every screen is rebuilt with it. */

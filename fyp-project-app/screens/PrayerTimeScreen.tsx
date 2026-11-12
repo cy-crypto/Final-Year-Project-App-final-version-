@@ -1,3 +1,4 @@
+import { getQuickPosition } from '../utils/quickLocation';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -102,7 +103,7 @@ export function PrayerTimeScreen() {
   const locate = useCallback(async (): Promise<PrayerPlace | null> => {
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') return null;
-    const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+    const pos = await getQuickPosition();
     let label = 'Current location';
     try {
       const [geo] = await Location.reverseGeocodeAsync(pos.coords);
@@ -135,6 +136,15 @@ export function PrayerTimeScreen() {
       fetchFor(target);
     })();
   }, [fetchFor, locate, user?.selectedCity]);
+
+  // Changing the Asr setting in Profile refetches the times for the place on screen.
+  const school = user?.preferences?.prayer_school;
+  const lastSchool = useRef(school);
+  useEffect(() => {
+    if (school === lastSchool.current) return;
+    lastSchool.current = school;
+    if (place) fetchFor(place);
+  }, [school, place, fetchFor]);
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 1000);
@@ -373,13 +383,12 @@ export function PrayerTimeScreen() {
     );
 
   return (
-    <SafeAreaView style={moduleStyles.container}>
+    <SafeAreaView style={moduleStyles.container} edges={['top']}>
       <ModuleHeader
         title="Prayer Times"
         subtitle={place ? place.label : 'Choose your location'}
         actions={[
           { icon: 'location-outline', label: 'Change location', onPress: () => setPickerOpen(true) },
-          { icon: 'compass-outline', label: 'Qibla', onPress: () => navigation.navigate('Qibla') },
           { icon: 'settings-outline', label: 'Adhan settings', onPress: () => navigation.navigate('AdhanSettings') },
         ]}
       />

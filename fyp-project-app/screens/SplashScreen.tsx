@@ -48,8 +48,8 @@ export function SplashScreen() {
     ]).start();
 
     const timer = setTimeout(() => {
-      // A restored Supabase session skips onboarding and login.
-      navigation.reset({ index: 0, routes: [{ name: isAuthenticated ? 'MainTabs' : 'Onboarding' }] });
+      // The onboarding cards show on every launch; they then open the app or the login screen.
+      navigation.reset({ index: 0, routes: [{ name: 'Onboarding' }] });
     }, 3200);
     return () => clearTimeout(timer);
   }, [navigation, isAuthenticated, ring, logoFade, logoScale, textFade, textRise, chips]);

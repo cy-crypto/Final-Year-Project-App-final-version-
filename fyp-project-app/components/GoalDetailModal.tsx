@@ -1,3 +1,4 @@
+import { useFieldChain } from '../hooks/useFieldChain';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -37,6 +38,7 @@ type Props = {
 };
 
 export function GoalDetailModal({ goal, currency, onClose, onChanged, onEdit }: Props) {
+  const field = useFieldChain(2, () => handleAdd());
   const [history, setHistory] = useState<GoalContributionDto[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [amount, setAmount] = useState('');
@@ -196,7 +198,7 @@ export function GoalDetailModal({ goal, currency, onClose, onChanged, onEdit }: 
 
             <Text style={styles.section}>Add money</Text>
             <View style={styles.addRow}>
-              <TextInput
+              <TextInput {...field(0)}
                 style={[styles.input, { flex: 1 }]}
                 placeholder="Amount"
                 placeholderTextColor={Colors.textHint}
@@ -208,7 +210,7 @@ export function GoalDetailModal({ goal, currency, onClose, onChanged, onEdit }: 
                 {saving ? <ActivityIndicator color={Colors.white} /> : <Ionicons name="add" size={26} color={Colors.white} />}
               </Pressable>
             </View>
-            <TextInput
+            <TextInput {...field(1)}
               style={[styles.input, { marginTop: 8 }]}
               placeholder="Note (optional)"
               placeholderTextColor={Colors.textHint}

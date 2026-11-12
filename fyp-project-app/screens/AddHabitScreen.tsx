@@ -1,3 +1,4 @@
+import { useFieldChain } from '../hooks/useFieldChain';
 import React, { useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -41,6 +42,8 @@ export function AddHabitScreen() {
   const { habits, addHabit, saveHabit, deleteHabit } = useAppContext();
   const editing = habits.find((h) => h.id === params?.habitId) ?? null;
   const preset = HABIT_SUGGESTIONS.find((s) => s.name === params?.preset);
+
+  const field = useFieldChain(1, () => handleSave());
 
   const [name, setName] = useState(editing?.name ?? preset?.name ?? '');
   const [description, setDescription] = useState(editing?.description ?? '');
@@ -121,7 +124,7 @@ export function AddHabitScreen() {
 
           <FormCard>
             <Field label="Habit name">
-              <Input placeholder="e.g. Read 20 minutes" value={name} onChangeText={setName} maxLength={255} />
+              <Input {...field(0)} placeholder="e.g. Read 20 minutes" value={name} onChangeText={setName} maxLength={255} />
             </Field>
             <Field label="Why it matters (optional)">
               <Input placeholder="e.g. To finish one book a month" multiline value={description} onChangeText={setDescription} />

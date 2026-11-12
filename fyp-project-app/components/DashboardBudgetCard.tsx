@@ -129,14 +129,16 @@ export function DashboardBudgetCard({ reloadKey }: Props) {
 
   return (
     <Pressable style={({ pressed }) => [styles.card, pressed && { opacity: 0.95 }]} onPress={goBudget}>
-      {/* decorative shapes */}
-      <View style={[styles.blob, styles.blobA]} />
-      <View style={[styles.blob, styles.blobB]} />
-
+      {/* Header */}
       <View style={styles.header}>
-        <View style={styles.badge}>
-          <Ionicons name="wallet" size={14} color={Colors.primary} />
-          <Text style={styles.badgeText}>Budget · {monthName}</Text>
+        <View style={styles.titleRow}>
+          <View style={styles.titleIcon}>
+            <Ionicons name="wallet" size={18} color={Colors.primary} />
+          </View>
+          <View>
+            <Text style={styles.title}>Budget</Text>
+            <Text style={styles.subtitle}>{monthName}</Text>
+          </View>
         </View>
         <View style={styles.viewRow}>
           <Text style={styles.viewText}>Details</Text>
@@ -144,50 +146,65 @@ export function DashboardBudgetCard({ reloadKey }: Props) {
         </View>
       </View>
 
-      <Text style={styles.label}>Spent this month</Text>
-      <View style={styles.amountRow}>
-        <Text style={styles.amount} numberOfLines={1} adjustsFontSizeToFit>
-          {currency} {formatMoney(expense)}
-        </Text>
-        {limit ? (
-          <View style={[styles.pctChip, overLimit && styles.pctChipOver]}>
-            <Text style={[styles.pctText, overLimit && { color: Colors.error }]}>{Math.round(pct)}%</Text>
-          </View>
-        ) : null}
+      {/* Spent this month */}
+      <View>
+        <Text style={styles.label}>Spent this month</Text>
+        <View style={styles.amountRow}>
+          <Text style={styles.amount} numberOfLines={1} adjustsFontSizeToFit>
+            {currency} {formatMoney(expense)}
+          </Text>
+          {limit ? (
+            <View style={[styles.pctChip, overLimit && styles.pctChipOver]}>
+              <Text style={[styles.pctText, overLimit && { color: Colors.error }]}>{Math.round(pct)}% used</Text>
+            </View>
+          ) : null}
+        </View>
       </View>
 
+      {/* Limit progress */}
       {limit ? (
-        <>
+        <View style={styles.progressBlock}>
           <View style={styles.track}>
-            <View style={[styles.fill, { width: `${Math.min(pct, 100)}%` }]} />
+            <View style={[styles.fill, overLimit && styles.fillOver, { width: `${Math.min(pct, 100)}%` }]} />
           </View>
           <View style={styles.limitRow}>
-            <Text style={styles.limitText}>of {currency} {formatMoney(limit)} limit</Text>
-            <Text style={styles.limitText}>
+            <Text style={styles.limitText}>Limit {currency} {formatMoney(limit)}</Text>
+            <Text style={styles.limitStrong}>
               {overLimit ? `${formatMoney(expense - limit)} over` : `${formatMoney(limit - expense)} left`}
             </Text>
           </View>
-        </>
+        </View>
       ) : (
         <Pressable onPress={() => navigation.navigate('BudgetSettings')} hitSlop={6}>
           <Text style={styles.hint}>Set a monthly limit to track your progress →</Text>
         </Pressable>
       )}
 
-      <View style={styles.pills}>
-        <Pill icon="arrow-down" label="Income" value={formatMoney(income)} />
-        <Pill icon={net >= 0 ? 'trending-up' : 'trending-down'} label="Net" value={`${net < 0 ? '-' : ''}${formatMoney(net)}`} />
-        <Pill icon="pie-chart" label="Top" value={topCategory ? `${topCategory.name} ${topCategory.share}%` : '—'} />
+      {/* Income / Net / Top category */}
+      <View style={styles.stats}>
+        <Stat label="Income" value={formatMoney(income)} color={Colors.success} />
+        <View style={styles.divider} />
+        <Stat
+          label="Net"
+          value={`${net < 0 ? '-' : ''}${formatMoney(net)}`}
+          color={net < 0 ? Colors.error : Colors.textPrimary}
+        />
+        <View style={styles.divider} />
+        <Stat
+          label="Top spend"
+          value={topCategory ? topCategory.name : '—'}
+          sub={topCategory ? `${topCategory.share}% of spending` : undefined}
+        />
       </View>
 
       {alertText ? (
-        <View style={styles.alert}>
+        <View style={[styles.alert, alertIsWarning && styles.alertWarning]}>
           <Ionicons
             name={alertIsWarning ? 'alert-circle' : dueSoon ? 'notifications' : 'information-circle'}
-            size={18}
-            color={alertIsWarning ? Colors.error : Colors.primary}
+            size={20}
+            color={alertIsWarning ? Colors.error : Colors.accentAmber}
           />
-          <Text style={[styles.alertText, alertIsWarning && { color: Colors.error }]} numberOfLines={1}>
+          <Text style={[styles.alertText, alertIsWarning && { color: Colors.error }]} numberOfLines={2}>
             {alertText}
           </Text>
         </View>
@@ -203,77 +220,91 @@ export function DashboardBudgetCard({ reloadKey }: Props) {
   );
 }
 
-function Pill({ icon, label, value }: { icon: keyof typeof Ionicons.glyphMap; label: string; value: string }) {
+function Stat({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
   return (
-    <View style={styles.pill}>
-      <View style={styles.pillTop}>
-        <Ionicons name={icon} size={13} color="rgba(255,255,255,0.9)" />
-        <Text style={styles.pillLabel}>{label}</Text>
-      </View>
-      <Text style={styles.pillValue} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
+    <View style={styles.stat}>
+      <Text style={styles.statLabel}>{label}</Text>
+      <Text
+        style={[styles.statValue, color ? { color } : null]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.7}
+      >
+        {value}
+      </Text>
+      {sub ? <Text style={styles.statSub} numberOfLines={1}>{sub}</Text> : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: Colors.primary,
+    // Same softened orange as every hero card in the app.
+    backgroundColor: Colors.heroOrange,
     borderRadius: Radius.xl,
-    padding: 16,
-    gap: 8,
+    padding: 18,
+    gap: 16,
     overflow: 'hidden',
     ...Shadows.button,
   },
   centered: { minHeight: 120, alignItems: 'center', justifyContent: 'center', gap: 8 },
-  failText: { fontFamily: Font.semibold, fontSize: 14, color: Colors.white },
-  blob: { position: 'absolute', borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.12)' },
-  blobA: { width: 190, height: 190, top: -70, right: -50 },
-  blobB: { width: 120, height: 120, bottom: -50, left: -30 },
+  failText: { fontFamily: Font.semibold, fontSize: 15, color: Colors.white },
 
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 },
-  badge: {
-    flexDirection: 'row',
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  titleIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: Colors.surfaceLight,
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: Colors.white,
-    borderRadius: Radius.pill,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    justifyContent: 'center',
   },
-  badgeText: { fontFamily: Font.bold, fontSize: 12, color: Colors.primary },
+  title: { fontFamily: Font.bold, fontSize: 17, color: Colors.white },
+  subtitle: { fontFamily: Font.medium, fontSize: 13, color: 'rgba(255,255,255,0.92)' },
   viewRow: { flexDirection: 'row', alignItems: 'center' },
-  viewText: { fontFamily: Font.bold, fontSize: 13, color: Colors.white },
+  viewText: { fontFamily: Font.bold, fontSize: 14, color: Colors.white },
 
-  label: { fontFamily: Font.medium, fontSize: 13, color: 'rgba(255,255,255,0.92)' },
+  label: { fontFamily: Font.medium, fontSize: 14, color: 'rgba(255,255,255,0.95)', marginBottom: 2 },
   amountRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
-  amount: { flex: 1, fontFamily: Font.extrabold, fontSize: 30, color: Colors.white, letterSpacing: -0.6 },
-  pctChip: { backgroundColor: 'rgba(255,255,255,0.25)', borderRadius: Radius.pill, paddingHorizontal: 12, paddingVertical: 4 },
+  amount: { flex: 1, fontFamily: Font.extrabold, fontSize: 32, color: Colors.white, letterSpacing: -0.6 },
+  pctChip: { backgroundColor: 'rgba(255,255,255,0.25)', borderRadius: Radius.pill, paddingHorizontal: 12, paddingVertical: 5 },
   pctChipOver: { backgroundColor: Colors.white },
-  pctText: { fontFamily: Font.extrabold, fontSize: 14, color: Colors.white },
+  pctText: { fontFamily: Font.bold, fontSize: 13, color: Colors.white },
 
-  track: { height: 10, borderRadius: 5, backgroundColor: 'rgba(255,255,255,0.3)', overflow: 'hidden', marginTop: 2 },
+  progressBlock: { gap: 8 },
+  track: { height: 10, borderRadius: 5, backgroundColor: 'rgba(255,255,255,0.3)', overflow: 'hidden' },
   fill: { height: '100%', borderRadius: 5, backgroundColor: Colors.white },
-  limitRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  limitText: { fontFamily: Font.semibold, fontSize: 12, color: 'rgba(255,255,255,0.95)' },
-  hint: { fontFamily: Font.semibold, fontSize: 13, color: Colors.white, textDecorationLine: 'underline' },
+  fillOver: { backgroundColor: Colors.white },
+  limitRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  limitText: { fontFamily: Font.medium, fontSize: 14, color: 'rgba(255,255,255,0.95)' },
+  limitStrong: { fontFamily: Font.bold, fontSize: 14, color: Colors.white },
+  hint: { fontFamily: Font.semibold, fontSize: 14, color: Colors.white, textDecorationLine: 'underline' },
 
-  pills: { flexDirection: 'row', gap: 8, marginTop: 6 },
-  pill: { flex: 1, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: Radius.md, paddingVertical: 8, paddingHorizontal: 10, gap: 2 },
-  pillTop: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  pillLabel: { fontFamily: Font.medium, fontSize: 11, color: 'rgba(255,255,255,0.92)' },
-  pillValue: { fontFamily: Font.extrabold, fontSize: 14, color: Colors.white },
+  stats: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    backgroundColor: Colors.surfaceLight,
+    borderRadius: Radius.md,
+    paddingVertical: 12,
+  },
+  stat: { flex: 1, paddingHorizontal: 12, gap: 2 },
+  divider: { width: 1, backgroundColor: Colors.borderLight },
+  statLabel: { fontFamily: Font.medium, fontSize: 13, color: Colors.textSecondary },
+  statValue: { fontFamily: Font.extrabold, fontSize: 17, color: Colors.textPrimary },
+  statSub: { fontFamily: Font.medium, fontSize: 12, color: Colors.textSecondary },
 
   alert: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: Colors.white,
+    gap: 10,
+    backgroundColor: Colors.tintAmber,
     borderRadius: Radius.md,
-    paddingVertical: 9,
-    paddingHorizontal: 12,
-    marginTop: 2,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
   },
-  alertText: { flex: 1, fontFamily: Font.bold, fontSize: 13, color: Colors.textPrimary },
+  alertWarning: { backgroundColor: Colors.tintRose },
+  alertText: { flex: 1, fontFamily: Font.bold, fontSize: 14, color: Colors.textPrimary },
   addBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -281,8 +312,7 @@ const styles = StyleSheet.create({
     gap: 6,
     backgroundColor: Colors.white,
     borderRadius: Radius.md,
-    height: 40,
-    marginTop: 4,
+    height: 46,
   },
-  addText: { fontFamily: Font.bold, fontSize: 14, color: Colors.primary },
+  addText: { fontFamily: Font.bold, fontSize: 15, color: Colors.primary },
 });

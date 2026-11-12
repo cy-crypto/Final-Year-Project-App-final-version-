@@ -13,15 +13,18 @@ import {
   METRIC_LABELS,
   deletePost,
   getChallenges,
+  getFamily,
   getFeed,
   getLeaderboard,
   toggleJoinChallenge,
   toggleLike,
   type Challenge,
+  type FamilyOverview,
   type Leaderboard,
   type Post,
 } from '../services/communityService';
 import { Avatar, PostCard } from '../components/community/PostCard';
+import { FamilyTab } from '../components/community/FamilyTab';
 import {
   Card,
   CenterLoader,
@@ -39,13 +42,14 @@ import {
 } from '../components/module/ModuleUI';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
-type TabKey = 'feed' | 'mine' | 'leaders' | 'challenges';
+type TabKey = 'feed' | 'mine' | 'leaders' | 'challenges' | 'family';
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'feed', label: 'Feed' },
-  { key: 'mine', label: 'My posts' },
+  { key: 'mine', label: 'Mine' },
   { key: 'leaders', label: 'Leaders' },
   { key: 'challenges', label: 'Challenges' },
+  { key: 'family', label: 'Members' },
 ];
 
 export function CommunityScreen() {
@@ -58,6 +62,7 @@ export function CommunityScreen() {
   const [board, setBoard] = useState<Leaderboard | null>(null);
   const [metric, setMetric] = useState<'streak' | 'tasks'>('streak');
   const [challenges, setChallenges] = useState<Challenge[] | null>(null);
+  const [family, setFamily] = useState<FamilyOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,10 +78,11 @@ export function CommunityScreen() {
         setPosts(page.results);
         setNextBefore(page.next_before);
       } else if (which === 'leaders') setBoard(await getLeaderboard(m));
+      else if (which === 'family') setFamily(await getFamily());
       else setChallenges(await getChallenges());
       setError(null);
     } catch (err) {
-      setError(toApiErrorMessage(err, 'Could not load the community.'));
+      setError(toApiErrorMessage(err, 'Could not load your family.'));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -165,7 +171,7 @@ export function CommunityScreen() {
       </Pressable>
       {posts.length === 0 ? (
         <EmptyCard
-          text={error ?? (tab === 'mine' ? 'You have not posted yet.' : 'No posts yet. Be the first to share something!')}
+          text={error ?? (tab === 'mine' ? 'You have not posted yet.' : 'No family posts yet. Add family members from the Members tab, then share something!')}
           icon="chatbubbles-outline"
         />
       ) : (
@@ -236,7 +242,7 @@ export function CommunityScreen() {
                 ))}
             </View>
           )}
-          <Text style={[moduleStyles.muted, { textAlign: 'center' }]}>You can hide yourself from rankings in Profile → Preferences.</Text>
+          <Text style={[moduleStyles.muted, { textAlign: 'center' }]}>Only your family is ranked here. You can hide yourself in Profile → Preferences.</Text>
         </>
       )}
     </>
@@ -246,7 +252,7 @@ export function CommunityScreen() {
     challenges === null ? (
       <ActivityIndicator color={Colors.primary} style={{ marginTop: 24 }} />
     ) : challenges.length === 0 ? (
-      <EmptyCard text="No challenges running. Start one with the + button!" icon="flag-outline" />
+      <EmptyCard text="No family challenges running. Start one with the + button!" icon="flag-outline" />
     ) : (
       <View style={moduleStyles.list}>
         {challenges.map((c) => {
@@ -288,9 +294,9 @@ export function CommunityScreen() {
     );
 
   return (
-    <SafeAreaView style={moduleStyles.container}>
+    <SafeAreaView style={moduleStyles.container} edges={['top']}>
       <ModuleHeader
-        title="Community"
+        title="Family"
         subtitle="Grow together, stay motivated."
         actions={[{ icon: 'trophy-outline', label: 'Share an achievement', onPress: () => navigation.navigate('ComposePost', { share: true }) }]}
       />
@@ -306,14 +312,20 @@ export function CommunityScreen() {
           contentContainerStyle={moduleStyles.content}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(tab, metric); }} tintColor={Colors.primary} />}
         >
-          {tab === 'feed' || tab === 'mine' ? renderFeed() : tab === 'leaders' ? renderLeaders() : renderChallenges()}
-          {error && tab !== 'feed' && tab !== 'mine' ? <SectionHeader title={error} /> : null}
+          {tab === 'feed' || tab === 'mine'
+            ? renderFeed()
+            : tab === 'leaders'
+              ? renderLeaders()
+              : tab === 'family'
+                ? <FamilyTab data={family} error={error} onChange={setFamily} />
+                : renderChallenges()}
+          {error && tab !== 'feed' && tab !== 'mine' && tab !== 'family' ? <SectionHeader title={error} /> : null}
         </ScrollView>
       )}
       {tab === 'challenges' ? (
-        <Fab onPress={() => navigation.navigate('CreateChallenge')} label="New challenge" />
+        <Fab onPress={() => navigation.navigate('CreateChallenge')} label="New challenge" aboveAssistant />
       ) : tab === 'feed' || tab === 'mine' ? (
-        <Fab onPress={() => navigation.navigate('ComposePost')} icon="create-outline" label="New post" />
+        <Fab onPress={() => navigation.navigate('ComposePost')} icon="create-outline" label="New post" aboveAssistant />
       ) : null}
     </SafeAreaView>
   );

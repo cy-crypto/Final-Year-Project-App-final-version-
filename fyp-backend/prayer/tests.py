@@ -2,7 +2,7 @@ import datetime
 from unittest import mock
 
 from django.contrib.auth.models import User
-from django.core.cache import cache
+from prayer.services import cache  # the 'external' cache prayer times are kept in
 from django.test import TestCase
 from rest_framework.test import APIClient
 

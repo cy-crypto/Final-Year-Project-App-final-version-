@@ -9,6 +9,7 @@ export const Colors = {
   primary: '#FF6B2C',        // Sunset orange — main CTA, active states, buttons
   primaryLight: '#FF8A55',   // Lighter orange — hover, highlights
   primarySurface: '#FFF3ED', // Soft orange tint — card backgrounds, chips
+  heroOrange: '#FF8248',     // Softer orange used by every hero card (Home budget, Tasks, Habits, Weather...)
   accentOlive: '#EA580C',    // Deep orange — secondary accent
   accentAmber: '#F59E0B',    // Amber — weather module, warm indicators
   accentBlue: '#6366F1',     // Indigo — analytics, progress module

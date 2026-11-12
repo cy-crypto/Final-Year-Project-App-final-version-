@@ -1,3 +1,4 @@
+import { getQuickPosition } from '../utils/quickLocation';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -114,7 +115,7 @@ export function WeatherScreen() {
   const devicePlace = useCallback(async (): Promise<Place | null> => {
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') return null;
-    const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+    const pos = await getQuickPosition();
     let city: string | undefined;
     try {
       const [geo] = await Location.reverseGeocodeAsync(pos.coords);
@@ -340,7 +341,6 @@ export function WeatherScreen() {
       <ModuleHeader
         title="Weather"
         subtitle={weather ? `${weather.city} · ${new Date().toLocaleDateString('en-US', { weekday: 'long' })}` : 'Plan your day.'}
-        showBack={false}
         actions={[{ icon: 'location-outline', label: 'Change place', onPress: () => setPickerOpen(true) }]}
       />
       <PillTabs

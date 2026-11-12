@@ -144,7 +144,7 @@ export function ComposePostScreen() {
                 )}
               </Field>
             ) : null}
-            <Text style={moduleStyles.muted}>Posts are visible to everyone in the community. You can delete yours any time.</Text>
+            <Text style={moduleStyles.muted}>Posts are visible only to your family. You can delete yours any time.</Text>
           </FormCard>
           <View style={{ paddingHorizontal: 16, gap: 8 }}>
             <ErrorText text={error} />

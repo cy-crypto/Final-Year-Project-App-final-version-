@@ -1,3 +1,4 @@
+import { useFieldChain } from '../hooks/useFieldChain';
 import React, { useCallback, useRef, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,6 +18,7 @@ const labels: Record<GoalType, string> = { steps: 'Daily steps', calories: 'Dail
 const units: Record<GoalType, string> = { steps: 'steps/day', calories: 'kcal/day', workout_frequency: 'sessions/week', sleep: 'minutes/day' };
 
 export function FitnessGoalsScreen() {
+  const field = useFieldChain(1, () => save());
   const [goals, setGoals] = useState<FitnessGoalDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -86,7 +88,7 @@ export function FitnessGoalsScreen() {
           <Text style={s.bodyStrong}>{editing ? 'Edit goal' : 'Personalized goal'}</Text>
           {!editing ? <ChipRow options={OPTIONS} value={kind} onChange={(value) => { if (!busy) { setKind(value); setFormError(null); } }} /> : <Text style={s.body}>{labels[kind]}</Text>}
           <Field label={`Target (${units[kind]})`} hint={existing && !editing ? 'An active goal exists. Saving updates its target without changing activity history.' : 'Daily goals use your profile timezone. Weeks run Monday–Sunday.'}>
-            <Input accessibilityLabel={`Goal target in ${units[kind]}`} keyboardType={kind === 'calories' ? 'decimal-pad' : 'number-pad'} value={target} onChangeText={setTarget} editable={!busy} placeholder="Enter target" />
+            <Input {...field(0)} accessibilityLabel={`Goal target in ${units[kind]}`} keyboardType={kind === 'calories' ? 'decimal-pad' : 'number-pad'} value={target} onChangeText={setTarget} editable={!busy} placeholder="Enter target" />
           </Field>
           {kind === 'workout_frequency' ? <Text style={s.body}>Session progress is unavailable: existing workout logs record exercises, not completed sessions. You can still save a weekly target.</Text> : null}
           <ErrorText text={formError} />

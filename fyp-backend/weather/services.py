@@ -5,6 +5,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
+from django.core.cache import caches
 from django.utils import timezone
 
 from .models import WeatherCache
@@ -25,6 +26,16 @@ def _extract_upstream_message(exc: HTTPError) -> str:
 
     message = data.get('message') if isinstance(data, dict) else None
     return message or 'Failed to fetch weather data.'
+
+
+def _cached(key, seconds, fetch):
+    """Return a recent answer for `key`, or fetch and keep it. Errors are never cached."""
+    store = caches['external']
+    value = store.get(key)
+    if value is None:
+        value = fetch()
+        store.set(key, value, seconds)
+    return value
 
 
 class WeatherAdapter:
@@ -205,7 +216,10 @@ class WeatherAdapter:
         }
 
     def get_uv_index(self, lat: float, lon: float) -> dict:
-        """Fetch UV Index data from OpenWeatherMap"""
+        """Fetch UV Index data from OpenWeatherMap (cached like the weather itself)."""
+        return _cached(f'uv:{round(lat, 2)},{round(lon, 2)}', self.cache_ttl, lambda: self._fetch_uv_index(lat, lon))
+
+    def _fetch_uv_index(self, lat: float, lon: float) -> dict:
         try:
             query = urlencode({'lat': lat, 'lon': lon, 'appid': self.api_key})
             url = f'https://api.openweathermap.org/data/2.5/uvi?{query}'
@@ -222,7 +236,10 @@ class WeatherAdapter:
             raise WeatherAdapterError('Failed to fetch UV index data.', 502)
 
     def get_air_pollution(self, lat: float, lon: float) -> dict:
-        """Fetch Air Quality Index data from OpenWeatherMap"""
+        """Fetch Air Quality Index data from OpenWeatherMap (cached like the weather itself)."""
+        return _cached(f'air:{round(lat, 2)},{round(lon, 2)}', self.cache_ttl, lambda: self._fetch_air_pollution(lat, lon))
+
+    def _fetch_air_pollution(self, lat: float, lon: float) -> dict:
         try:
             query = urlencode({'lat': lat, 'lon': lon, 'appid': self.api_key})
             url = f'https://api.openweathermap.org/data/2.5/air_pollution?{query}'

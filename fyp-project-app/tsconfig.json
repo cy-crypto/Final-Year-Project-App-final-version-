@@ -11,5 +11,10 @@
   "include": [
     "**/*.ts",
     "**/*.tsx"
+  ],
+  // app/ is the unused Expo Router starter template (the app starts from App.tsx with React Navigation).
+  "exclude": [
+    "node_modules",
+    "app"
   ]
 }

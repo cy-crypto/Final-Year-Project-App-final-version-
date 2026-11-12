@@ -8,7 +8,9 @@ from urllib.parse import urlencode
 from urllib.request import urlopen
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from django.core.cache import cache
+from django.core.cache import caches
+
+cache = caches['external']
 
 ALADHAN = 'https://api.aladhan.com/v1'
 PRAYERS = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha']

@@ -31,7 +31,6 @@ import {
   CenterLoader,
   EmptyCard,
   EntryCard,
-  Fab,
   HeroCard,
   HeroStat,
   HeroStats,
@@ -64,6 +63,10 @@ export function MedicationScreen() {
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [busySlot, setBusySlot] = useState<string | null>(null);
+  const [historyFilter, setHistoryFilter] = useState<{ status: 'all' | DoseStatus; range: '7' | '30' | '90' }>({
+    status: 'all',
+    range: '30',
+  });
 
   const load = useCallback(async () => {
     try {
@@ -177,8 +180,18 @@ export function MedicationScreen() {
             </View>
           ) : null}
           <HeroStats>
-            <HeroStat icon="alarm" label={next ? `Next · ${next.name}` : 'Next dose'} value={nextText} />
-            <HeroStat icon="cube" label="Need refill" value={String(today.refills.length)} />
+            <HeroStat
+              icon="alarm"
+              label={next ? `Next · ${next.name}` : 'Next dose'}
+              value={nextText}
+              onPress={() => (next ? navigation.navigate('AddMedication', { medicationId: next.medication_id }) : setTab('medicines'))}
+            />
+            <HeroStat
+              icon="cube"
+              label="Need refill"
+              value={String(today.refills.length)}
+              onPress={() => (today.refills.length === 1 ? openMedication(today.refills[0]) : setTab('medicines'))}
+            />
           </HeroStats>
         </HeroCard>
 
@@ -271,11 +284,14 @@ export function MedicationScreen() {
   };
 
   return (
-    <SafeAreaView style={moduleStyles.container}>
+    <SafeAreaView style={moduleStyles.container} edges={['top']}>
       <ModuleHeader
         title="Medication"
         subtitle="Never miss a dose."
-        actions={[{ icon: 'call-outline', label: 'Emergency call', onPress: callEmergency }]}
+        actions={[
+          { icon: 'call-outline', label: 'Emergency call', onPress: callEmergency },
+          { icon: 'add', label: 'Add medicine', onPress: () => navigation.navigate('AddMedication'), primary: true },
+        ]}
       />
       <PillTabs tabs={TABS} value={tab} onChange={setTab} />
 
@@ -301,14 +317,25 @@ export function MedicationScreen() {
             : tab === 'medicines'
               ? renderMedicines()
               : tab === 'history'
-                ? <MedicationHistoryTab medications={medications} reloadKey={reloadKey} />
-                : <MedicationInsightsTab medications={medications} reloadKey={reloadKey} />}
+                ? <MedicationHistoryTab
+                    key={historyFilter.status + historyFilter.range}
+                    medications={medications}
+                    reloadKey={reloadKey}
+                    initialStatus={historyFilter.status}
+                    initialRange={historyFilter.range}
+                  />
+                : <MedicationInsightsTab
+                    medications={medications}
+                    reloadKey={reloadKey}
+                    onOpenHistory={(status, range) => {
+                      setHistoryFilter({ status, range });
+                      setTab('history');
+                    }}
+                    onOpenMedication={openMedication}
+                  />}
         </ScrollView>
       )}
 
-      {tab === 'today' || tab === 'medicines' ? (
-        <Fab onPress={() => navigation.navigate('AddMedication')} label="Add medicine" />
-      ) : null}
     </SafeAreaView>
   );
 }

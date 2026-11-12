@@ -85,8 +85,8 @@ export function HabitDetailScreen() {
   const share = async () => {
     try {
       await shareAchievement('habit_streak', '', Number(habit.id));
-      Alert.alert('Shared', 'Your streak is now in the Community feed.', [
-        { text: 'View', onPress: () => navigation.navigate('Community') },
+      Alert.alert('Shared', 'Your streak is now in the Family feed.', [
+        { text: 'View', onPress: () => navigation.navigate('MainTabs', { screen: 'Community' } as never) },
         { text: 'OK' },
       ]);
     } catch (err) {

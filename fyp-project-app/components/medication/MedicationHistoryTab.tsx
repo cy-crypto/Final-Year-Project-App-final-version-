@@ -32,9 +32,19 @@ function daysAgo(n: number) {
 }
 
 /** Intake history log (FR-05.3), grouped by day and filterable by status, medicine and range. */
-export function MedicationHistoryTab({ medications, reloadKey }: { medications: Medication[]; reloadKey: number }) {
-  const [status, setStatus] = useState<'all' | DoseStatus>('all');
-  const [range, setRange] = useState<'7' | '30' | '90'>('30');
+export function MedicationHistoryTab({
+  medications,
+  reloadKey,
+  initialStatus = 'all',
+  initialRange = '30',
+}: {
+  medications: Medication[];
+  reloadKey: number;
+  initialStatus?: 'all' | DoseStatus;
+  initialRange?: '7' | '30' | '90';
+}) {
+  const [status, setStatus] = useState<'all' | DoseStatus>(initialStatus);
+  const [range, setRange] = useState<'7' | '30' | '90'>(initialRange);
   const [medication, setMedication] = useState<string>('all');
   const [logs, setLogs] = useState<MedicationLog[] | null>(null);
   const [error, setError] = useState<string | null>(null);

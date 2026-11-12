@@ -1,3 +1,4 @@
+import { useFieldChain } from '../hooks/useFieldChain';
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
@@ -25,6 +26,10 @@ export function LoginScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, 'Login'>>();
   const { login } = useAuth();
+
+  const field = useFieldChain(2, () => handleLogin());
+
+  const resetField = useFieldChain(3, () => handleResetPassword());
 
   const [email, setEmail] = useState(route.params?.email ?? '');
   const [password, setPassword] = useState('');
@@ -137,9 +142,10 @@ export function LoginScreen() {
           <View style={styles.fieldGroup}>
             <Text style={styles.fieldLabel}>Email address</Text>
             <View style={styles.inputContainer}>
-              <Ionicons name="mail-outline" size={20} color={Colors.textHint} style={{ marginLeft: 2 }} />
-              <TextInput
+              <Ionicons name="mail-outline" size={18} color={Colors.textHint} />
+              <TextInput {...field(0)}
                 style={styles.textInput}
+                maxFontSizeMultiplier={1.2}
                 value={email}
                 onChangeText={setEmail}
                 keyboardType="email-address"
@@ -156,9 +162,10 @@ export function LoginScreen() {
           <View style={styles.fieldGroup}>
             <Text style={styles.fieldLabel}>Password</Text>
             <View style={styles.inputContainer}>
-              <Ionicons name="lock-closed-outline" size={20} color={Colors.textHint} style={{ marginLeft: 2 }} />
-              <TextInput
+              <Ionicons name="lock-closed-outline" size={18} color={Colors.textHint} />
+              <TextInput {...field(1)}
                 style={styles.textInput}
+                maxFontSizeMultiplier={1.2}
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry={!showPassword}
@@ -216,9 +223,10 @@ export function LoginScreen() {
               <View style={styles.fieldGroup}>
                 <Text style={styles.fieldLabel}>Email address</Text>
                 <View style={styles.inputContainer}>
-                  <Ionicons name="mail-outline" size={20} color={Colors.textHint} style={{ marginLeft: 2 }} />
-                  <TextInput
+                  <Ionicons name="mail-outline" size={18} color={Colors.textHint} />
+                  <TextInput {...resetField(0)}
                     style={styles.textInput}
+                    maxFontSizeMultiplier={1.2}
                     value={resetEmail}
                     onChangeText={setResetEmail}
                     keyboardType="email-address"
@@ -238,9 +246,10 @@ export function LoginScreen() {
               <View style={styles.fieldGroup}>
                 <Text style={styles.fieldLabel}>Reset code</Text>
                 <View style={styles.inputContainer}>
-                  <Ionicons name="key-outline" size={20} color={Colors.textHint} style={{ marginLeft: 2 }} />
-                  <TextInput
+                  <Ionicons name="key-outline" size={18} color={Colors.textHint} />
+                  <TextInput {...resetField(1)}
                     style={styles.textInput}
+                    maxFontSizeMultiplier={1.2}
                     value={resetCode}
                     onChangeText={setResetCode}
                     keyboardType="number-pad"
@@ -255,9 +264,10 @@ export function LoginScreen() {
               <View style={styles.fieldGroup}>
                 <Text style={styles.fieldLabel}>New password</Text>
                 <View style={styles.inputContainer}>
-                  <Ionicons name="lock-closed-outline" size={20} color={Colors.textHint} style={{ marginLeft: 2 }} />
-                  <TextInput
+                  <Ionicons name="lock-closed-outline" size={18} color={Colors.textHint} />
+                  <TextInput {...resetField(2)}
                     style={styles.textInput}
+                    maxFontSizeMultiplier={1.2}
                     value={resetPasswordValue}
                     onChangeText={setResetPasswordValue}
                     secureTextEntry
@@ -292,7 +302,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 24,
+    paddingHorizontal: 16,
     justifyContent: 'center',
     paddingVertical: 40,
   },
@@ -332,14 +342,14 @@ const styles = StyleSheet.create({
     borderRadius: Radius.lg,
     borderWidth: 1,
     borderColor: Colors.borderSoft,
-    padding: 22,
+    padding: 18,
     ...Shadows.card,
   },
   fieldGroup: {
-    marginBottom: 12,
+    marginBottom: 10,
   },
   fieldLabel: {
-    fontSize: 15,
+    fontSize: 14,
     fontFamily: Font.bold,
     color: Colors.textSecondary,
     marginBottom: 8,
@@ -351,14 +361,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.borderLight,
     borderRadius: Radius.md,
-    padding: 10,
     paddingHorizontal: 12,
-    height: 58,
-    gap: 10,
+    height: 48,
+    gap: 8,
   },
   textInput: {
     fontFamily: Font.regular,
-    fontSize: 18,
+    fontSize: 14,
     color: '#000000',
     flex: 1,
     padding: 0,

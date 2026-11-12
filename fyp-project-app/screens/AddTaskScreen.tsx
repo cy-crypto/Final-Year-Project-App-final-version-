@@ -1,3 +1,4 @@
+import { useFieldChain } from '../hooks/useFieldChain';
 import React, { useMemo, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,7 +15,6 @@ import { toApiErrorMessage } from '../services/api';
 import { ensureNotificationPermission, parseLocalDate } from '../services/reminderService';
 import { DateTimeInput } from '../components/module/DateTimeInput';
 import {
-  ChipRow,
   ErrorText,
   Field,
   FormCard,
@@ -26,7 +26,7 @@ import {
   moduleStyles,
 } from '../components/module/ModuleUI';
 import { PickedFile, normalizeLink, pickTaskDocument, pickTaskPhoto } from '../components/tasks/pickAttachment';
-import { PRIORITY_META, TASK_CATEGORIES, toDateStr } from '../utils/taskFormat';
+import { PRIORITY_META, toDateStr } from '../utils/taskFormat';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 type Route = RouteProp<RootStackParamList, 'AddTask'>;
@@ -49,15 +49,19 @@ export function AddTaskScreen() {
   const { tasks, addTask, updateTask, getTask } = useAppContext();
   const editing = useMemo(() => tasks.find((t) => t.id === route.params?.taskId) ?? null, [tasks, route.params?.taskId]);
 
+  const field = useFieldChain(1, () => handleSave());
+
   const [title, setTitle] = useState(editing?.title ?? '');
   const [description, setDescription] = useState(editing?.description ?? '');
-  const [category, setCategory] = useState(editing?.category ?? '');
+  // Category and email reminder are no longer in the form; existing values are kept on save.
+  const category = editing?.category ?? '';
   const [priority, setPriority] = useState<TaskPriority>(editing?.priority ?? 'medium');
   const [status, setStatus] = useState<TaskStatus>(editing?.status ?? 'pending');
   const [deadline, setDeadline] = useState<Date | null>(editing?.deadline ? parseLocalDate(editing.deadline) : null);
   const [reminderOn, setReminderOn] = useState(Boolean(editing?.reminder_time));
   const [reminderDate, setReminderDate] = useState<Date | null>(editing?.reminder_time ? new Date(editing.reminder_time) : null);
-  const [emailReminder, setEmailReminder] = useState(editing?.email_reminder_enabled ?? false);
+  const emailReminder = editing?.email_reminder_enabled ?? false;
+  const [showLinkInput, setShowLinkInput] = useState(false);
   const [links, setLinks] = useState<string[]>(editing?.links ?? []);
   const [linkInput, setLinkInput] = useState('');
   const [files, setFiles] = useState<PickedFile[]>([]);
@@ -143,8 +147,6 @@ export function AddTaskScreen() {
     }
   };
 
-  const categoryOptions = Array.from(new Set([...TASK_CATEGORIES, ...(editing?.category ? [editing.category] : [])]));
-
   return (
     <SafeAreaView style={moduleStyles.container}>
       <FormHeader title={editing ? 'Edit Task' : 'Add Task'} />
@@ -152,18 +154,10 @@ export function AddTaskScreen() {
         <ScrollView contentContainerStyle={moduleStyles.formContent} keyboardShouldPersistTaps="handled">
           <FormCard>
             <Field label="Title">
-              <Input placeholder="e.g. Submit assignment" value={title} onChangeText={setTitle} />
+              <Input {...field(0)} placeholder="e.g. Submit assignment" value={title} onChangeText={setTitle} />
             </Field>
             <Field label="Description (optional)">
               <Input placeholder="Add a note..." multiline value={description} onChangeText={setDescription} />
-            </Field>
-            <Field label="Category (optional)">
-              <ChipRow
-                options={categoryOptions.map((c) => ({ key: c, label: c }))}
-                value={categoryOptions.find((c) => c.toLowerCase() === category.trim().toLowerCase()) ?? null}
-                onChange={(c) => setCategory(category === c ? '' : c)}
-              />
-              <Input placeholder="Or type your own" value={category} onChangeText={setCategory} />
             </Field>
             <Field label="Priority">
               <Segmented
@@ -181,6 +175,43 @@ export function AddTaskScreen() {
             <Field label="Deadline (optional)">
               <DateTimeInput value={deadline} mode="date" onChange={setDeadline} onClear={() => setDeadline(null)} placeholder="Pick a day" />
             </Field>
+            <Field label="Attach (optional)">
+              <View style={styles.iconRow}>
+                <IconAction icon="link" active={showLinkInput} onPress={() => setShowLinkInput((v) => !v)} />
+                <IconAction icon="camera-outline" onPress={() => addFile('camera')} />
+                <IconAction icon="image-outline" onPress={() => addFile('gallery')} />
+                <IconAction icon="document-attach-outline" onPress={() => addFile('document')} />
+              </View>
+              {showLinkInput ? (
+                <View style={moduleStyles.row}>
+                  <View style={{ flex: 1 }}>
+                    <Input
+                      placeholder="example.com/notes"
+                      value={linkInput}
+                      onChangeText={setLinkInput}
+                      autoCapitalize="none"
+                      keyboardType="url"
+                      onSubmitEditing={addLink}
+                      autoFocus
+                    />
+                  </View>
+                  <Pressable style={styles.addBtn} onPress={addLink}>
+                    <Ionicons name="add" size={22} color={Colors.white} />
+                  </Pressable>
+                </View>
+              ) : null}
+              {links.map((link) => (
+                <AttachmentChip key={link} icon="link" text={link} onRemove={() => setLinks((prev) => prev.filter((l) => l !== link))} />
+              ))}
+              {files.map((file) => (
+                <AttachmentChip
+                  key={file.uri}
+                  icon="document-outline"
+                  text={file.name}
+                  onRemove={() => setFiles((prev) => prev.filter((f) => f.uri !== file.uri))}
+                />
+              ))}
+            </Field>
           </FormCard>
 
           <FormCard>
@@ -196,51 +227,7 @@ export function AddTaskScreen() {
                 <DateTimeInput value={reminderDate} mode="time" onChange={(d) => setReminderPart('time', d)} placeholder="Reminder time" />
               </View>
             ) : null}
-            <ToggleRow
-              title="Email reminder"
-              meta="Allow sending this task to your email from the task page"
-              value={emailReminder}
-              onValueChange={setEmailReminder}
-            />
             <Text style={moduleStyles.muted}>Open tasks with a deadline also get a reminder at 9:00 on the due day.</Text>
-          </FormCard>
-
-          <FormCard>
-            <Field label="Links (optional)">
-              <View style={moduleStyles.row}>
-                <View style={{ flex: 1 }}>
-                  <Input
-                    placeholder="example.com/notes"
-                    value={linkInput}
-                    onChangeText={setLinkInput}
-                    autoCapitalize="none"
-                    keyboardType="url"
-                    onSubmitEditing={addLink}
-                  />
-                </View>
-                <Pressable style={styles.addBtn} onPress={addLink}>
-                  <Ionicons name="add" size={22} color={Colors.white} />
-                </Pressable>
-              </View>
-              {links.map((link) => (
-                <AttachmentChip key={link} icon="link" text={link} onRemove={() => setLinks((prev) => prev.filter((l) => l !== link))} />
-              ))}
-            </Field>
-            <Field label={editing ? 'Add files (optional)' : 'Files and photos (optional)'}>
-              <View style={moduleStyles.row}>
-                <SmallAction icon="camera-outline" label="Camera" onPress={() => addFile('camera')} />
-                <SmallAction icon="image-outline" label="Gallery" onPress={() => addFile('gallery')} />
-                <SmallAction icon="document-attach-outline" label="File" onPress={() => addFile('document')} />
-              </View>
-              {files.map((file) => (
-                <AttachmentChip
-                  key={file.uri}
-                  icon="document-outline"
-                  text={file.name}
-                  onRemove={() => setFiles((prev) => prev.filter((f) => f.uri !== file.uri))}
-                />
-              ))}
-            </Field>
           </FormCard>
 
           <View style={{ paddingHorizontal: 16, gap: 8 }}>
@@ -253,11 +240,10 @@ export function AddTaskScreen() {
   );
 }
 
-function SmallAction({ icon, label, onPress }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void }) {
+function IconAction({ icon, onPress, active }: { icon: keyof typeof Ionicons.glyphMap; onPress: () => void; active?: boolean }) {
   return (
-    <Pressable style={styles.smallAction} onPress={onPress}>
-      <Ionicons name={icon} size={18} color={Colors.primary} />
-      <Text style={styles.smallActionText}>{label}</Text>
+    <Pressable style={[styles.iconAction, active && styles.iconActionActive]} onPress={onPress} hitSlop={4}>
+      <Ionicons name={icon} size={20} color={active ? Colors.white : Colors.primary} />
     </Pressable>
   );
 }
@@ -285,19 +271,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  smallAction: {
-    flex: 1,
+  iconRow: { flexDirection: 'row', gap: 10 },
+  iconAction: {
+    width: 42,
     height: 42,
-    flexDirection: 'row',
-    gap: 6,
+    borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: Radius.md,
     borderWidth: 1,
     borderColor: Colors.borderLight,
     backgroundColor: Colors.primarySurface,
   },
-  smallActionText: { fontFamily: Font.semibold, fontSize: 13, color: Colors.primary },
+  iconActionActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   attachment: {
     flexDirection: 'row',
     alignItems: 'center',

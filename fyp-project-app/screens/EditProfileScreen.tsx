@@ -1,3 +1,4 @@
+import { useFieldChain } from '../hooks/useFieldChain';
 import React, { useState } from 'react';
 import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -24,6 +25,8 @@ const BIO_LIMIT = 280;
 export function EditProfileScreen() {
   const navigation = useNavigation();
   const { user, updateProfile } = useAuth();
+
+  const field = useFieldChain(2, () => handleSave());
 
   const [fullName, setFullName] = useState(user?.fullName ?? '');
   const [bio, setBio] = useState(user?.bio ?? '');
@@ -135,7 +138,7 @@ export function EditProfileScreen() {
 
           <FormCard>
             <Field label="Full name">
-              <Input placeholder="Your name" value={fullName} onChangeText={setFullName} maxLength={120} />
+              <Input {...field(0)} placeholder="Your name" value={fullName} onChangeText={setFullName} maxLength={120} />
             </Field>
             <Field label="Email">
               <Input value={user?.email ?? ''} editable={false} style={{ color: Colors.textSecondary }} />
@@ -149,7 +152,7 @@ export function EditProfileScreen() {
               />
             </Field>
             <Field label="City" hint="Used for weather and prayer times.">
-              <Input placeholder="e.g. Lahore" value={city} onChangeText={setCity} />
+              <Input {...field(1)} placeholder="e.g. Lahore" value={city} onChangeText={setCity} />
               <SecondaryButton label={locating ? 'Locating...' : 'Use my location'} icon="locate-outline" onPress={fillCityFromLocation} />
             </Field>
           </FormCard>

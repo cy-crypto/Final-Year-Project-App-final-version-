@@ -1,4 +1,5 @@
 import datetime
+from concurrent.futures import ThreadPoolExecutor
 
 from django.utils import timezone
 from rest_framework import permissions, status
@@ -46,12 +47,14 @@ class PrayerTimesView(APIView):
         except ValueError:
             return Response({'detail': 'Invalid method, school, days or date.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        def fetch(i):
+            return services.get_day(start + datetime.timedelta(days=i), lat=lat, lon=lon,
+                                    address=None if lat is not None else city, method=method, school=school)
+
         try:
-            entries = [
-                services.get_day(start + datetime.timedelta(days=i), lat=lat, lon=lon,
-                                 address=None if lat is not None else city, method=method, school=school)
-                for i in range(days)
-            ]
+            # Days not in the cache are fetched from the prayer API at the same time, not one by one.
+            with ThreadPoolExecutor(max_workers=days) as pool:
+                entries = list(pool.map(fetch, range(days)))
         except services.PrayerError as exc:
             return Response({'detail': str(exc)}, status=exc.status_code)
 

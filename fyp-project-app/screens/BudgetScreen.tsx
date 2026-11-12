@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ModuleHeader } from '../components/module/ModuleUI';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -115,6 +116,10 @@ export function BudgetScreen() {
   const monthName = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
   const openTransaction = (t: TransactionDto) => navigation.navigate('AddTransaction', { transaction: t });
+  const openMonthTxns = (filters: { type?: 'income' | 'expense'; category?: string }) => {
+    const { from, to } = currentMonthRange();
+    navigation.navigate('Transactions', { ...filters, dateFrom: from, dateTo: to });
+  };
 
   const renderOverview = () => (
     <>
@@ -126,24 +131,32 @@ export function BudgetScreen() {
           {currency} {formatMoney(net)}
         </Text>
         <View style={styles.heroRow}>
-          <View style={styles.heroStat}>
+          <Pressable
+            style={({ pressed }) => [styles.heroStat, pressed && { opacity: 0.85 }]}
+            onPress={() => openMonthTxns({ type: 'income' })}
+          >
             <View style={styles.heroIcon}>
               <Ionicons name="arrow-down" size={16} color={Colors.primary} />
             </View>
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={styles.heroStatLabel}>Income</Text>
               <Text style={styles.heroStatValue}>{formatMoney(income)}</Text>
             </View>
-          </View>
-          <View style={styles.heroStat}>
+            <Ionicons name="chevron-forward" size={16} color={Colors.textHint} />
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [styles.heroStat, pressed && { opacity: 0.85 }]}
+            onPress={() => openMonthTxns({ type: 'expense' })}
+          >
             <View style={styles.heroIcon}>
               <Ionicons name="arrow-up" size={16} color={Colors.primary} />
             </View>
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={styles.heroStatLabel}>Expenses</Text>
               <Text style={styles.heroStatValue}>{formatMoney(expense)}</Text>
             </View>
-          </View>
+            <Ionicons name="chevron-forward" size={16} color={Colors.textHint} />
+          </Pressable>
         </View>
       </View>
 
@@ -195,7 +208,11 @@ export function BudgetScreen() {
       {/* Spending donut */}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Spending by category</Text>
-        <CategoryDonut rows={donutRows} currency={currency} />
+        <CategoryDonut
+          rows={donutRows}
+          currency={currency}
+          onPressCategory={(label) => openMonthTxns({ type: 'expense', category: label })}
+        />
       </View>
 
       {/* Recent */}
@@ -220,24 +237,16 @@ export function BudgetScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        {navigation.canGoBack() ? (
-          <Pressable style={styles.iconBtn} onPress={() => navigation.goBack()} hitSlop={8}>
-            <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
-          </Pressable>
-        ) : null}
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title}>Budget</Text>
-          <Text style={styles.subtitle}>Your money, under control.</Text>
-        </View>
-        <Pressable style={styles.iconBtn} onPress={() => setReportVisible(true)} hitSlop={8}>
-          <Ionicons name="document-text-outline" size={24} color={Colors.textPrimary} />
-        </Pressable>
-        <Pressable style={styles.iconBtn} onPress={() => navigation.navigate('BudgetSettings')} hitSlop={8}>
-          <Ionicons name="settings-outline" size={24} color={Colors.textPrimary} />
-        </Pressable>
-      </View>
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <ModuleHeader
+        title="Budget"
+        subtitle="Your money, under control."
+        actions={[
+          { icon: 'document-text-outline', label: 'Reports', onPress: () => setReportVisible(true) },
+          { icon: 'settings-outline', label: 'Budget settings', onPress: () => navigation.navigate('BudgetSettings') },
+          { icon: 'add', label: 'Add transaction', onPress: () => navigation.navigate('AddTransaction'), primary: true },
+        ]}
+      />
 
       <View style={styles.tabs}>
         {TABS.map((t) => (
@@ -278,11 +287,6 @@ export function BudgetScreen() {
         </ScrollView>
       )}
 
-      {tab === 'overview' && (
-        <Pressable style={styles.fab} onPress={() => navigation.navigate('AddTransaction')}>
-          <Ionicons name="add" size={32} color={Colors.white} />
-        </Pressable>
-      )}
       <ReportModal visible={reportVisible} onClose={() => setReportVisible(false)} />
     </SafeAreaView>
   );
@@ -291,10 +295,6 @@ export function BudgetScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bgLight },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 12 },
-  iconBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  title: { fontFamily: Font.extrabold, fontSize: 28, color: Colors.textPrimary, letterSpacing: -0.4, paddingLeft: 4 },
-  subtitle: { fontFamily: Font.medium, fontSize: 15, color: Colors.textSecondary, paddingLeft: 4 },
 
   tabs: {
     flexDirection: 'row',
@@ -311,22 +311,22 @@ const styles = StyleSheet.create({
 
   content: { paddingHorizontal: 16, paddingBottom: 120, gap: 14 },
 
-  hero: { backgroundColor: Colors.primary, borderRadius: Radius.xl, padding: 16, gap: 4, ...Shadows.button },
-  heroLabel: { fontFamily: Font.semibold, fontSize: 14, color: 'rgba(255,255,255,0.9)' },
-  heroValue: { fontFamily: Font.extrabold, fontSize: 30, color: Colors.white, letterSpacing: -0.6 },
-  heroRow: { flexDirection: 'row', gap: 10, marginTop: 8 },
+  hero: { backgroundColor: Colors.heroOrange, borderRadius: Radius.xl, padding: 18, gap: 6, ...Shadows.button },
+  heroLabel: { fontFamily: Font.semibold, fontSize: 15, color: 'rgba(255,255,255,0.95)' },
+  heroValue: { fontFamily: Font.extrabold, fontSize: 32, color: Colors.white, letterSpacing: -0.6 },
+  heroRow: { flexDirection: 'row', gap: 10, marginTop: 10 },
   heroStat: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: Colors.surfaceLight,
     borderRadius: Radius.md,
-    padding: 10,
+    padding: 12,
   },
-  heroIcon: { width: 30, height: 30, borderRadius: 15, backgroundColor: Colors.white, alignItems: 'center', justifyContent: 'center' },
-  heroStatLabel: { fontFamily: Font.medium, fontSize: 12, color: 'rgba(255,255,255,0.9)' },
-  heroStatValue: { fontFamily: Font.extrabold, fontSize: 16, color: Colors.white },
+  heroIcon: { width: 34, height: 34, borderRadius: 17, backgroundColor: Colors.tintOrange, alignItems: 'center', justifyContent: 'center' },
+  heroStatLabel: { fontFamily: Font.medium, fontSize: 13, color: Colors.textSecondary },
+  heroStatValue: { fontFamily: Font.extrabold, fontSize: 17, color: Colors.textPrimary },
 
   card: {
     backgroundColor: Colors.surfaceLight,
@@ -363,17 +363,4 @@ const styles = StyleSheet.create({
   subsTitle: { fontFamily: Font.bold, fontSize: 16, color: Colors.textPrimary },
   subsMeta: { fontFamily: Font.medium, fontSize: 13, color: Colors.textSecondary },
   subsNext: { fontFamily: Font.semibold, fontSize: 13, color: Colors.primary, marginTop: 1 },
-
-  fab: {
-    position: 'absolute',
-    right: 24,
-    bottom: 28,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: Colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Shadows.button,
-  },
 });

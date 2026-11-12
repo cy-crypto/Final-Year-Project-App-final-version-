@@ -1,3 +1,4 @@
+import { useFieldChain } from '../hooks/useFieldChain';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -10,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { FormHeader } from '../components/module/ModuleUI';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
@@ -22,6 +24,8 @@ type BudgetSettingsScreenNavigationProp = NativeStackNavigationProp<RootStackPar
 
 export function BudgetSettingsScreen() {
   const navigation = useNavigation<BudgetSettingsScreenNavigationProp>();
+
+  const field = useFieldChain(2, () => handleSave());
 
   const [monthlyLimit, setMonthlyLimit] = useState('');
   const [currency, setCurrency] = useState('PKR');
@@ -95,17 +99,11 @@ export function BudgetSettingsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.modalHeader}>
-        <Pressable onPress={handleGoBack}>
-          <Text style={styles.backButton}>← Back</Text>
-        </Pressable>
-        <Text style={styles.modalTitle}>Budget Settings</Text>
-        <View style={styles.placeholder} />
-      </View>
+      <FormHeader title="Budget Settings" onBack={handleGoBack} />
 
       <View style={styles.formCard}>
         <Text style={styles.label}>Monthly Limit (optional)</Text>
-        <TextInput
+        <TextInput {...field(0)}
           value={monthlyLimit}
           onChangeText={setMonthlyLimit}
           placeholder="e.g. 15000"
@@ -114,7 +112,7 @@ export function BudgetSettingsScreen() {
         />
 
         <Text style={styles.label}>Currency</Text>
-        <TextInput
+        <TextInput {...field(1)}
           value={currency}
           onChangeText={setCurrency}
           placeholder="PKR"
@@ -149,29 +147,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  backButton: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.primary,
-  },
-  modalTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: Colors.textPrimary,
-    textAlign: 'center',
-    flex: 1,
-    letterSpacing: -0.3,
-  },
-  placeholder: {
-    width: 60,
   },
   formCard: {
     backgroundColor: Colors.surfaceLight,

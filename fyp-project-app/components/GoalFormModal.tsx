@@ -1,3 +1,4 @@
+import { useFieldChain } from '../hooks/useFieldChain';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -29,6 +30,7 @@ type Props = {
 };
 
 export function GoalFormModal({ visible, currency, editing, onClose, onSaved }: Props) {
+  const field = useFieldChain(2, () => handleSave());
   const [name, setName] = useState('');
   const [icon, setIcon] = useState('flag');
   const [target, setTarget] = useState('');
@@ -100,7 +102,7 @@ export function GoalFormModal({ visible, currency, editing, onClose, onSaved }: 
             </View>
 
             <Text style={[styles.label, { marginTop: 14 }]}>Goal name</Text>
-            <TextInput
+            <TextInput {...field(0)}
               style={styles.input}
               placeholder="e.g. Ummrah 2027"
               placeholderTextColor={Colors.textHint}
@@ -109,7 +111,7 @@ export function GoalFormModal({ visible, currency, editing, onClose, onSaved }: 
             />
 
             <Text style={[styles.label, { marginTop: 14 }]}>Target amount ({currency})</Text>
-            <TextInput
+            <TextInput {...field(1)}
               style={styles.input}
               placeholder="e.g. 500000"
               placeholderTextColor={Colors.textHint}

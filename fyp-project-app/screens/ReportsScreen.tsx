@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Dimensions, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ModuleHeader } from '../components/module/ModuleUI';
 
 import { Colors } from '../constants/theme';
 import { useAppContext } from '../context/AppContext';
@@ -192,15 +193,11 @@ export function ReportsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Pressable onPress={() => {/* Handle back navigation */}}>
-          <Text style={styles.backButton}>←</Text>
-        </Pressable>
-        <Text style={styles.headerTitle}>Reports</Text>
-        <Pressable onPress={() => { fetchReportData(); fetchMedicationReport(); }}>
-          <Text style={styles.refreshButton}>↻</Text>
-        </Pressable>
-      </View>
+      <ModuleHeader
+        title="Reports"
+        subtitle="Your activity over time."
+        actions={[{ icon: 'refresh-outline', label: 'Refresh', onPress: () => { fetchReportData(); fetchMedicationReport(); } }]}
+      />
 
       {/* Period Toggle */}
       <View style={styles.periodToggle}>
@@ -293,31 +290,6 @@ const styles = StyleSheet.create({
     marginTop: height * 0.04,
     color: Colors.textSecondary,
     fontSize: width * 0.04,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: width * 0.04,
-    paddingVertical: height * 0.03,
-    backgroundColor: Colors.surfaceLight,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.primaryLight,
-  },
-  backButton: {
-    fontSize: width * 0.06,
-    fontWeight: '600',
-    color: Colors.primary,
-  },
-  headerTitle: {
-    fontSize: width * 0.05,
-    fontWeight: '700',
-    color: Colors.textPrimary,
-  },
-  refreshButton: {
-    fontSize: width * 0.05,
-    fontWeight: '600',
-    color: Colors.primary,
   },
   periodToggle: {
     flexDirection: 'row',

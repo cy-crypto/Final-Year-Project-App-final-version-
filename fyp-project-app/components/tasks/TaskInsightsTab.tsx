@@ -1,11 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Colors, Font } from '../../constants/theme';
 import { useAppContext } from '../../context/AppContext';
-import type { TaskReport } from '../../services/taskService';
+import type { TaskPriority, TaskReport, TaskStatus } from '../../services/taskService';
 import { toApiErrorMessage } from '../../services/api';
-import { formatDuration } from '../../utils/taskFormat';
 import { BarChart } from '../module/BarChart';
 import { Card, ChipRow, EmptyCard, ProgressBar, StatTile, moduleStyles } from '../module/ModuleUI';
 
@@ -17,7 +16,9 @@ const PERIODS: { key: Period; label: string }[] = [
   { key: 'monthly', label: 'This month' },
 ];
 
-export function TaskInsightsTab({ reloadKey }: { reloadKey: number }) {
+type ListFilters = { status?: 'all' | 'open' | 'overdue' | TaskStatus; priority?: 'any' | TaskPriority; category?: string };
+
+export function TaskInsightsTab({ reloadKey, onOpenList }: { reloadKey: number; onOpenList?: (filters: ListFilters) => void }) {
   const { getTaskReport } = useAppContext();
   const [period, setPeriod] = useState<Period>('weekly');
   const [report, setReport] = useState<TaskReport | null>(null);
@@ -52,9 +53,9 @@ export function TaskInsightsTab({ reloadKey }: { reloadKey: number }) {
         <>
           <Card title="Completion">
             <View style={moduleStyles.grid}>
-              <StatTile label="Created" value={String(s.total)} />
-              <StatTile label="Completed" value={String(s.completed)} tint={Colors.tintGreen} color={Colors.success} />
-              <StatTile label="Overdue" value={String(s.overdue)} tint={Colors.tintRose} color={Colors.error} />
+              <StatTile label="Created" value={String(s.total)} onPress={() => onOpenList?.({ status: 'all' })} />
+              <StatTile label="Completed" value={String(s.completed)} tint={Colors.tintGreen} color={Colors.success} onPress={() => onOpenList?.({ status: 'done' })} />
+              <StatTile label="Overdue" value={String(s.overdue)} tint={Colors.tintRose} color={Colors.error} onPress={() => onOpenList?.({ status: 'overdue' })} />
             </View>
             <View style={moduleStyles.rowBetween}>
               <Text style={moduleStyles.muted}>Completion rate</Text>
@@ -62,7 +63,7 @@ export function TaskInsightsTab({ reloadKey }: { reloadKey: number }) {
             </View>
             <ProgressBar pct={rate} />
             <Text style={moduleStyles.muted}>
-              Time tracked: {formatDuration(s.time_spent_seconds)} · {s.completed_in_period} finished in this period
+              {s.completed_in_period} finished in this period
             </Text>
           </Card>
 
@@ -77,8 +78,15 @@ export function TaskInsightsTab({ reloadKey }: { reloadKey: number }) {
           </Card>
 
           <Card title="By priority">
-            {Object.values(report.by_priority).map((p) => (
-              <BreakdownRow key={p.label} label={p.label} color={p.color} total={p.total} completed={p.completed} />
+            {Object.entries(report.by_priority).map(([key, p]) => (
+              <BreakdownRow
+                key={p.label}
+                label={p.label}
+                color={p.color}
+                total={p.total}
+                completed={p.completed}
+                onPress={() => onOpenList?.({ priority: key as TaskPriority })}
+              />
             ))}
           </Card>
 
@@ -87,7 +95,14 @@ export function TaskInsightsTab({ reloadKey }: { reloadKey: number }) {
               <Text style={moduleStyles.body}>No tasks in this period yet.</Text>
             ) : (
               categories.map((c) => (
-                <BreakdownRow key={c.label} label={c.label} color={c.color} total={c.total} completed={c.completed} />
+                <BreakdownRow
+                  key={c.label}
+                  label={c.label}
+                  color={c.color}
+                  total={c.total}
+                  completed={c.completed}
+                  onPress={() => onOpenList?.({ category: c.label })}
+                />
               ))
             )}
           </Card>
@@ -97,10 +112,16 @@ export function TaskInsightsTab({ reloadKey }: { reloadKey: number }) {
   );
 }
 
-function BreakdownRow({ label, color, total, completed }: { label: string; color: string; total: number; completed: number }) {
+function BreakdownRow({ label, color, total, completed, onPress }: {
+  label: string;
+  color: string;
+  total: number;
+  completed: number;
+  onPress?: () => void;
+}) {
   const pct = total > 0 ? (completed / total) * 100 : 0;
   return (
-    <View style={{ gap: 6 }}>
+    <Pressable style={({ pressed }) => [{ gap: 6 }, pressed && { opacity: 0.6 }]} onPress={onPress} disabled={!onPress}>
       <View style={moduleStyles.rowBetween}>
         <View style={moduleStyles.row}>
           <View style={[styles.dot, { backgroundColor: color }]} />
@@ -111,7 +132,7 @@ function BreakdownRow({ label, color, total, completed }: { label: string; color
         </Text>
       </View>
       <ProgressBar pct={pct} color={color} />
-    </View>
+    </Pressable>
   );
 }
 

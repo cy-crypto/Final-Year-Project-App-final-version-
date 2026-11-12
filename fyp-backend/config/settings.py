@@ -168,6 +168,19 @@ CORS_ALLOWED_ORIGINS = [
     'exp://127.0.0.1:19000',
 ]
 
+_TESTING = 'test' in sys.argv[1:2]
+CACHES = {
+    # Request throttles etc. stay in memory.
+    'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'},
+    # Answers from outside services (prayer times, UV, air quality). Kept on disk so a server
+    # restart does not make the next request wait for the outside API again.
+    'external': (
+        {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache', 'LOCATION': 'external-tests'}
+        if _TESTING else
+        {'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache', 'LOCATION': str(BASE_DIR / '.cache')}
+    ),
+}
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'accounts.supabase_auth.SupabaseJWTAuthentication',

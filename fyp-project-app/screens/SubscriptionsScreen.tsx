@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ModuleHeader } from '../components/module/ModuleUI';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -168,13 +169,7 @@ export function SubscriptionsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.topBar}>
-        <Pressable style={styles.backBtn} onPress={() => navigation.goBack()} hitSlop={8}>
-          <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
-        </Pressable>
-        <Text style={styles.title}>Subscriptions</Text>
-        <View style={styles.backBtn} />
-      </View>
+      <ModuleHeader title="Subscriptions" subtitle="Your recurring payments." />
 
       {loading ? (
         <View style={styles.center}>
@@ -260,15 +255,12 @@ export function SubscriptionsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bgLight },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 8 },
-  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  title: { fontFamily: Font.extrabold, fontSize: 22, color: Colors.textPrimary },
   content: { paddingHorizontal: 16, paddingBottom: 120, gap: 12 },
 
-  hero: { backgroundColor: Colors.primary, borderRadius: Radius.xl, padding: 16, gap: 4, ...Shadows.button },
-  heroLabel: { fontFamily: Font.semibold, fontSize: 14, color: 'rgba(255,255,255,0.9)' },
-  heroValue: { fontFamily: Font.extrabold, fontSize: 30, color: Colors.white, letterSpacing: -0.6 },
-  heroNote: { fontFamily: Font.medium, fontSize: 13, color: 'rgba(255,255,255,0.92)' },
+  hero: { backgroundColor: Colors.heroOrange, borderRadius: Radius.xl, padding: 18, gap: 6, ...Shadows.button },
+  heroLabel: { fontFamily: Font.semibold, fontSize: 15, color: 'rgba(255,255,255,0.95)' },
+  heroValue: { fontFamily: Font.extrabold, fontSize: 32, color: Colors.white, letterSpacing: -0.6 },
+  heroNote: { fontFamily: Font.medium, fontSize: 14, color: 'rgba(255,255,255,0.95)' },
   reminder: {
     flexDirection: 'row',
     alignItems: 'center',
