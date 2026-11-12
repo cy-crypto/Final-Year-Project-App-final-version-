@@ -8,7 +8,7 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "https://erasure-riveter-overcome.ngrok-free.dev",
+        "EXPO_PUBLIC_BACKEND_URL": "https://final-year-project-app-final-version.onrender.com",
         "EXPO_PUBLIC_SUPABASE_URL": "https://pcwtllwuuodxuhkjssvg.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_fZ3kLUX7hMXJfUpWAWftug_zxVPGxnN"
       }
@@ -19,7 +19,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "https://erasure-riveter-overcome.ngrok-free.dev",
+        "EXPO_PUBLIC_BACKEND_URL": "https://final-year-project-app-final-version.onrender.com",
         "EXPO_PUBLIC_SUPABASE_URL": "https://pcwtllwuuodxuhkjssvg.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_fZ3kLUX7hMXJfUpWAWftug_zxVPGxnN"
       }
@@ -27,7 +27,7 @@
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "https://erasure-riveter-overcome.ngrok-free.dev",
+        "EXPO_PUBLIC_BACKEND_URL": "https://final-year-project-app-final-version.onrender.com",
         "EXPO_PUBLIC_SUPABASE_URL": "https://pcwtllwuuodxuhkjssvg.supabase.co",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_fZ3kLUX7hMXJfUpWAWftug_zxVPGxnN"
       }
