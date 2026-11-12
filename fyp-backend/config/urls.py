@@ -18,7 +18,8 @@ from django.contrib import admin
 from django.conf import settings
 from django.conf.urls.static import static
 from django.http import JsonResponse
-from django.urls import include, path
+from django.urls import include, path, re_path
+from django.views.static import serve
 
 
 def api_root(_request):
@@ -57,3 +58,8 @@ urlpatterns = [
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+else:
+    # Uploaded files (profile photos, Family post images, task attachments) in production too.
+    urlpatterns += [
+        re_path(r'^%s(?P<path>.*)$' % settings.MEDIA_URL.lstrip('/'), serve, {'document_root': settings.MEDIA_ROOT}),
+    ]

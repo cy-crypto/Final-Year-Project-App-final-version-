@@ -428,8 +428,6 @@ export function HomeScreen() {
     label: string;
     value: string;
     icon: keyof typeof Ionicons.glyphMap;
-    tint: string;
-    solid: string;
     onPress: () => void;
   }[] = [
     {
@@ -437,8 +435,6 @@ export function HomeScreen() {
       label: 'Tasks Due',
       value: `${todaysTasks.length} Today`,
       icon: 'checkbox',
-      tint: Colors.tintOrange,
-      solid: Colors.primary,
       onPress: () => navigation.navigate('Tasks'),
     },
     {
@@ -446,8 +442,6 @@ export function HomeScreen() {
       label: 'Habits',
       value: `${completedHabitsToday}/${habits.length} Done`,
       icon: 'flame',
-      tint: Colors.tintAmber,
-      solid: Colors.accentAmber,
       onPress: () => navigation.navigate('Habits'),
     },
     {
@@ -455,8 +449,6 @@ export function HomeScreen() {
       label: 'Fitness',
       value: stepsToday === null ? 'Open' : `${stepsToday.toLocaleString()} steps`,
       icon: 'fitness',
-      tint: Colors.tintRose,
-      solid: Colors.accentRose,
       onPress: () => navigation.navigate('Fitness'),
     },
     {
@@ -464,8 +456,6 @@ export function HomeScreen() {
       label: 'Medication',
       value: nextMed ? nextMed.schedule_times[0] : 'All clear',
       icon: 'medkit',
-      tint: Colors.tintIndigo,
-      solid: Colors.accentBlue,
       onPress: () => navigation.navigate('Medication'),
     },
   ];
@@ -636,11 +626,11 @@ export function HomeScreen() {
             {row.map((tile) => (
               <Pressable
                 key={tile.key}
-                style={({ pressed }) => [styles.statTile, { backgroundColor: tile.tint }, pressed && styles.pressed]}
+                style={({ pressed }) => [styles.statTile, pressed && styles.pressed]}
                 onPress={tile.onPress}
               >
-                <View style={[styles.statIcon, { backgroundColor: tile.solid }]}>
-                  <Ionicons name={tile.icon} size={26} color={Colors.white} />
+                <View style={styles.statIcon}>
+                  <Ionicons name={tile.icon} size={26} color={Colors.heroOrange} />
                 </View>
                 <View style={styles.statText}>
                   <Text style={styles.statLabel}>{tile.label}</Text>
@@ -1043,6 +1033,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     borderRadius: Radius.lg,
     padding: 16,
+    backgroundColor: Colors.heroOrange,
+    ...Shadows.button,
   },
   statIcon: {
     width: 52,
@@ -1050,17 +1042,18 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: Colors.white,
   },
   statText: {},
   statLabel: {
     fontSize: 14,
     fontFamily: Font.semibold,
-    color: Colors.textSecondary,
+    color: 'rgba(255,255,255,0.9)',
   },
   statValue: {
     fontSize: 18,
     fontFamily: Font.extrabold,
-    color: Colors.textPrimary,
+    color: Colors.white,
     marginTop: 1,
   },
 
